@@ -1,3 +1,12 @@
+'use client';
+
+import { /* your imports here */ } from '...';
+// other imports...
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+// ...rest of the file...
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 'use client';

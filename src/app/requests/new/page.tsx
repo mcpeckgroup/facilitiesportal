@@ -1,4 +1,13 @@
 'use client';
+
+import { /* your imports here */ } from '...';
+// other imports...
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+// ...rest of the file...
+'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../../lib/supabase/client';

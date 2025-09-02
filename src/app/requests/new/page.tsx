@@ -1,67 +1,114 @@
 'use client';
 
-import { /* your imports here */ } from '...';
-// other imports...
-
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
-// ...rest of the file...
-'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../../lib/supabase/client';
 
-type Priority='emergency'|'urgent'|'non_critical'|'routine'|'preventive';
-type Exec='in_house'|'contractor';
-
 export default function NewRequestPage() {
   const router = useRouter();
-  const [title,setTitle]=useState(''); const [location,setLocation]=useState('');
-  const [requestedByName,setRequestedByName]=useState(''); const [priority,setPriority]=useState<Priority>('routine');
-  const [description,setDescription]=useState(''); const [exec,setExec]=useState<Exec>('in_house');
-  const [poNumber,setPoNumber]=useState(''); const [poNA,setPoNA]=useState(false);
-  const [error,setError]=useState<string|null>(null); const [saving,setSaving]=useState(false);
+  const [title, setTitle] = useState('');
+  const [details, setDetails] = useState('');
+  const [location, setLocation] = useState('');
+  const [priority, setPriority] = useState<'low'|'medium'|'high'|'emergency'>('medium');
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit=async(e:React.FormEvent)=>{ e.preventDefault(); setError(null); setSaving(true);
-    const { data:{ user } } = await supabase.auth.getUser(); if(!user) return router.replace('/login');
-    const { error } = await supabase.from('work_orders').insert({
-      requester: user.id,
-      title: title || `${location||'Request'} • ${priority}`,
-      details: description,
-      description, location,
-      requested_by_user: user.id, requested_by_name: requestedByName || user.email,
-      priority, execution: exec, po_number: poNA?null:poNumber, po_na: poNA
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) router.replace('/login');
     });
-    setSaving(false); if(error) setError(error.message); else router.push('/requests');
-  };
+  }, [router]);
+
+  async function submitWO(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error('Not signed in');
+
+      const { data, error } = await supabase
+        .from('work_orders')
+        .insert({
+          title,
+          details: details || null,
+          status: 'open',
+          priority,
+          location: location || null,
+          requester: auth.user.id,
+          requested_by_name: auth.user.email || null
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+
+      router.push(`/requests/${data!.id}`);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to submit request');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
-    <main style={{padding:24,maxWidth:720,margin:'0 auto'}}>
-      <h1 style={{fontSize:24,fontWeight:600,marginBottom:16}}>New Maintenance Request</h1>
-      <form onSubmit={submit} style={{display:'grid',gap:12}}>
-        <input placeholder="Title (e.g., RTU leaking)" value={title} onChange={e=>setTitle(e.target.value)} style={{padding:10}} />
-        <input placeholder="Location" value={location} onChange={e=>setLocation(e.target.value)} style={{padding:10}} />
-        <input placeholder="Requested by" value={requestedByName} onChange={e=>setRequestedByName(e.target.value)} style={{padding:10}} />
-        <label>Priority</label>
-        <select value={priority} onChange={e=>setPriority(e.target.value as Priority)} style={{padding:10}}>
-          <option value="emergency">Emergency</option><option value="urgent">Urgent</option>
-          <option value="non_critical">Non-critical</option><option value="routine">Routine</option>
-          <option value="preventive">Preventive</option>
-        </select>
-        <textarea placeholder="Request description" value={description} onChange={e=>setDescription(e.target.value)} style={{padding:10,minHeight:120}} />
-        <label>Work to be performed</label>
-        <div style={{display:'flex',gap:16}}>
-          <label><input type="radio" checked={exec==='in_house'} onChange={()=>setExec('in_house')}/> In-house</label>
-          <label><input type="radio" checked={exec==='contractor'} onChange={()=>setExec('contractor')}/> Contractor</label>
+    <div style={{maxWidth: 720, margin:'40px auto', padding:24}}>
+      <h1 style={{fontSize: 24, fontWeight:700}}>New Work Order</h1>
+
+      <form onSubmit={submitWO} style={{marginTop:16, display:'grid', gap:12}}>
+        <label>
+          <div style={{fontSize:12, color:'#444'}}>Title</div>
+          <input
+            required
+            value={title}
+            onChange={(e)=>setTitle(e.target.value)}
+            style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
+          />
+        </label>
+
+        <label>
+          <div style={{fontSize:12, color:'#444'}}>Details</div>
+          <textarea
+            rows={5}
+            value={details}
+            onChange={(e)=>setDetails(e.target.value)}
+            style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
+          />
+        </label>
+
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          <label>
+            <div style={{fontSize:12, color:'#444'}}>Location</div>
+            <input
+              value={location}
+              onChange={(e)=>setLocation(e.target.value)}
+              style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
+            />
+          </label>
+
+          <label>
+            <div style={{fontSize:12, color:'#444'}}>Priority</div>
+            <select
+              value={priority}
+              onChange={(e)=>setPriority(e.target.value as any)}
+              style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
+            >
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="emergency">emergency</option>
+            </select>
+          </label>
         </div>
-        <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <input placeholder="PO #" value={poNumber} onChange={e=>setPoNumber(e.target.value)} style={{padding:10,flex:1}} disabled={poNA}/>
-          <label><input type="checkbox" checked={poNA} onChange={()=>setPoNA(!poNA)}/> PO N/A</label>
+
+        <div style={{display:'flex', gap:8, marginTop:8}}>
+          <button
+            type="submit"
+            disabled={submitting || !title}
+            style={{padding:'10px 12px', borderRadius:8, background:'#111', color:'#fff', border:'1px solid #111'}}
+          >
+            {submitting ? 'Submitting…' : 'Submit'}
+          </button>
+          <a href="/requests" style={{padding:'10px 12px', borderRadius:8, border:'1px solid #111', textDecoration:'none'}}>Cancel</a>
         </div>
-        {error && <p style={{color:'red'}}>{error}</p>}
-        <button type="submit" disabled={saving} style={{padding:'10px 14px',borderRadius:8}}>{saving?'Submitting…':'Submit request'}</button>
       </form>
-    </main>
+    </div>
   );
 }

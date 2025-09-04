@@ -30,6 +30,7 @@ export default function RequestsListPage() {
       const { data, error } = await supabase
         .from('work_orders')
         .select('id,title,details,status,priority,location,created_at,requested_by_name')
+	.in('status', ['open', 'in_progress']) 
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) {

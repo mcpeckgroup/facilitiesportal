@@ -1,42 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabase/client';
+import Link from 'next/link';
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.replace('/login');
-      } else {
-        setUserEmail(data.user.email ?? null);
-      }
-    });
-  }, [router]);
-
-  async function signOut() {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  }
-
   return (
-    <div style={{maxWidth: 900, margin: '40px auto', padding: 24}}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-        <h1 style={{fontSize: 28, fontWeight: 700}}>Facilities Portal</h1>
-        <div>
-          <span style={{marginRight: 12, color: '#555'}}>{userEmail}</span>
-          <button onClick={signOut} style={{border:'1px solid #ccc', padding:'6px 10px', borderRadius:8}}>Sign out</button>
-        </div>
+    <div className="max-w-5xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Dashboard</h1>
+
+      <div className="flex gap-2">
+        <Link href="/requests" className="px-3 py-2 rounded-md border hover:bg-gray-50">
+          Open Requests
+        </Link>
+        <Link href="/requests/completed" className="px-3 py-2 rounded-md border hover:bg-gray-50">
+          Completed Requests
+        </Link>
       </div>
 
-      <div style={{marginTop: 24, display:'flex', gap: 12}}>
-        <a href="/requests/new" style={{padding:'10px 12px', borderRadius:8, background:'#111', color:'#fff', textDecoration:'none'}}>New Request</a>
-        <a href="/requests" style={{padding:'10px 12px', borderRadius:8, border:'1px solid #111', textDecoration:'none'}}>View Requests</a>
-      </div>
+      <p className="text-gray-600">
+        Use the tabs above to view open or completed work orders. Mark a work order as
+        <em> completed</em> from its detail page; it will automatically appear under “Completed Requests”.
+      </p>
     </div>
   );
 }

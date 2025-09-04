@@ -1,72 +1,131 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase/client';
+import Link from 'next/link';
+import { supabase } from '../../../lib/supabase/client';
 
 type WO = {
   id: string;
-  title: string;
-  location: string | null;
-  status: 'open' | 'in_progress' | 'completed' | string | null;
+  title: string | null;
+  details: string | null;
+  priority: 'emergency' | 'urgent' | 'non_critical' | 'routine' | null;
+  status: 'open' | 'in_progress' | 'completed' | null;
   created_at: string | null;
   requested_by_name: string | null;
+  location: string | null;
 };
 
 export default function CompletedRequestsPage() {
-  const [items, setItems] = useState<WO[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [list, setList] = useState<WO[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isAuthed, setIsAuthed] = useState<boolean>(false);
 
   useEffect(() => {
-    (async () => {
-      setErr(null);
+    const run = async () => {
       setLoading(true);
+      setError(null);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const authed = !!sessionData.session;
+      setIsAuthed(authed);
+
+      if (!authed) {
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('work_orders')
-        .select('id,title,location,status,created_at,requested_by_name')
+        .select('id,title,details,priority,status,created_at,requested_by_name,location')
         .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
-      if (error) setErr(error.message);
-      setItems(data ?? []);
+      if (error) setError(error.message);
+      else setList(data || []);
+
       setLoading(false);
-    })();
+    };
+    run();
   }, []);
 
+  if (!isAuthed) {
+    return (
+      <main className="max-w-4xl mx-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold">Completed Requests</h1>
+          <div className="flex gap-3">
+            <Link className="px-3 py-2 rounded bg-blue-600 text-white" href="/requests/new">
+              New Request
+            </Link>
+            <Link className="px-3 py-2 rounded border" href="/login">
+              Login
+            </Link>
+          </div>
+        </div>
+        <p className="text-gray-700">
+          Please <Link className="text-blue-600 underline" href="/login">log in</Link> to view completed requests.
+        </p>
+      </main>
+    );
+  }
+
   return (
-    <main className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Completed Work Orders</h1>
-        <div className="space-x-2">
-          <Link href="/requests" className="underline">Open / In Progress</Link>
-          <Link href="/requests/new" className="bg-black text-white px-3 py-2 rounded">New Request</Link>
+    <main className="max-w-6xl mx-auto p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold">Completed Requests</h1>
+        <div className="flex gap-3">
+          <Link className="px-3 py-2 rounded border" href="/requests">
+            Open / In-Progress
+          </Link>
+          <Link className="px-3 py-2 rounded bg-blue-600 text-white" href="/requests/new">
+            New Request
+          </Link>
         </div>
       </div>
 
       {loading && <p>Loading…</p>}
-      {err && <p className="text-red-600">{err}</p>}
+      {error && <p className="text-red-600">Error: {error}</p>}
 
-      <ul className="divide-y border rounded">
-        {items.map((wo) => (
-          <li key={wo.id} className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Link href={`/requests/${wo.id}`} className="font-medium underline">{wo.title}</Link>
-                <div className="text-sm text-gray-600">
-                  {wo.location ?? 'No location'} • {wo.status ?? 'unknown'}
-                </div>
-              </div>
-              <div className="text-sm text-gray-500">
-                {wo.requested_by_name ?? 'Requester'} • {wo.created_at ? new Date(wo.created_at).toLocaleString() : ''}
-              </div>
-            </div>
-          </li>
-        ))}
-        {(!loading && !err && items.length === 0) && (
-          <li className="p-4 text-gray-600">No completed items.</li>
-        )}
-      </ul>
+      {!loading && !error && (
+        <div className="overflow-x-auto border rounded">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left p-3">Completed</th>
+                <th className="text-left p-3">Title</th>
+                <th className="text-left p-3">Priority</th>
+                <th className="text-left p-3">Requested By</th>
+                <th className="text-left p-3">Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((wo) => (
+                <tr key={wo.id} className="border-t hover:bg-gray-50">
+                  <td className="p-3 whitespace-nowrap">
+                    {wo.created_at ? new Date(wo.created_at).toLocaleString() : '—'}
+                  </td>
+                  <td className="p-3">
+                    <Link className="text-blue-600 underline" href={`/requests/${wo.id}`}>
+                      {wo.title || '(no title)'}
+                    </Link>
+                  </td>
+                  <td className="p-3 capitalize">{wo.priority?.replace('_', ' ') || '—'}</td>
+                  <td className="p-3">{wo.requested_by_name || '—'}</td>
+                  <td className="p-3">{wo.location || '—'}</td>
+                </tr>
+              ))}
+              {list.length === 0 && (
+                <tr>
+                  <td className="p-4 text-gray-600" colSpan={5}>
+                    No completed requests yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </main>
   );
 }

@@ -2,81 +2,70 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '../../lib/supabase/client';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [pw, setPw] = useState('');
-  const [mode, setMode] = useState<'signin'|'signup'>('signin');
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  async function handleSubmit(e: React.FormEvent) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
-    setBusy(true);
-    try {
-      if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password: pw });
-        if (error) throw error;
-      }
-      router.push('/requests');
-    } catch (e: any) {
-      setErr(e?.message ?? 'Login failed');
-    } finally {
-      setBusy(false);
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+
+    if (error) {
+      setErr(error.message);
+      return;
     }
-  }
+    router.push('/requests');
+  };
 
   return (
-    <main className="max-w-md mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">{mode === 'signin' ? 'Sign in' : 'Create account'}</h1>
+    <main className="max-w-md mx-auto pt-10">
+      <h1 className="text-2xl font-semibold mb-6">Login</h1>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <label className="block">
-          <span className="text-sm">Email</span>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div>
+          <label className="block mb-1 text-sm">Email</label>
           <input
             type="email"
-            className="mt-1 w-full border rounded px-3 py-2"
+            className="w-full border rounded-md px-3 py-2"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm">Password</span>
+        </div>
+
+        <div>
+          <label className="block mb-1 text-sm">Password</label>
           <input
             type="password"
-            className="mt-1 w-full border rounded px-3 py-2"
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
+            className="w-full border rounded-md px-3 py-2"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
-            autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+            autoComplete="current-password"
           />
-        </label>
+        </div>
 
         {err && <p className="text-red-600 text-sm">{err}</p>}
 
         <button
           type="submit"
-          disabled={busy}
-          className="w-full bg-black text-white rounded px-3 py-2 disabled:opacity-50"
+          className="w-full px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-60"
+          disabled={loading}
         >
-          {busy ? 'Please wait…' : (mode === 'signin' ? 'Sign in' : 'Sign up')}
+          {loading ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
-
-      <button
-        className="text-sm underline"
-        onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-      >
-        {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-      </button>
     </main>
   );
 }

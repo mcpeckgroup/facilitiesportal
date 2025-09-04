@@ -1,8 +1,10 @@
 export default function Home() {
   return (
-    <main style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 600 }}>Facilities Portal</h1>
-      <p><a href="/login">Login</a> • <a href="/requests">Requests</a></p>
+    <main className="max-w-3xl mx-auto p-8">
+      <h1 className="text-2xl font-semibold mb-4">Facilities Portal</h1>
+      <p className="mb-6">Submit and manage work orders.</p>
+      <a href="/login" className="underline mr-4">Login</a>
+      <a href="/requests" className="underline">View Requests</a>
     </main>
   );
 }

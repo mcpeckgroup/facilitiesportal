@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 
 type WO = {
   id: string;
   title: string;
   details: string | null;
-  status: string | null;
-  priority: string | null;
   location: string | null;
+  status: 'open' | 'in_progress' | 'completed' | string | null;
   created_at: string | null;
   requested_by_name: string | null;
 };
@@ -18,83 +17,87 @@ type WO = {
 export default function RequestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [wo, setWO] = useState<WO | null>(null);
+
+  const [wo, setWo] = useState<WO | null>(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    async function run() {
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth.user) {
-        router.replace('/login');
-        return;
-      }
+    (async () => {
+      setErr(null);
+      setLoading(true);
       const { data, error } = await supabase
         .from('work_orders')
-        .select('id,title,details,status,priority,location,created_at,requested_by_name')
+        .select('id,title,details,location,status,created_at,requested_by_name')
         .eq('id', id)
         .single();
-      if (error) {
-        alert(error.message);
-      } else {
-        setWO(data as WO);
-      }
-      setLoading(false);
-    }
-    run();
-  }, [id, router]);
 
-  async function markComplete() {
+      if (error) setErr(error.message);
+      setWo(data ?? null);
+      setLoading(false);
+    })();
+  }, [id]);
+
+  async function markCompleted() {
     try {
+      setSaving(true);
+      setErr(null);
+
+      // Append note into details (avoids needing a new column)
+      const newDetails =
+        (wo?.details ?? '') + (note ? `\n\nCompletion note: ${note}` : '');
+
       const { error } = await supabase
         .from('work_orders')
-        .update({
-          status: 'completed',
-          details: note ? `${wo?.details ? wo?.details + '\n\n' : ''}Completion note: ${note}` : wo?.details
-        })
+        .update({ status: 'completed', details: newDetails })
         .eq('id', id);
+
       if (error) throw error;
-      alert('Marked completed');
-      router.push('/requests');
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update');
+      router.push('/requests/completed');
+    } catch (e: any) {
+      setErr(e?.message ?? 'Update failed');
+    } finally {
+      setSaving(false);
     }
   }
 
-  if (loading) return <div style={{maxWidth:800, margin:'40px auto', padding:24}}>Loading…</div>;
-  if (!wo) return <div style={{maxWidth:800, margin:'40px auto', padding:24}}>Not found.</div>;
-
   return (
-    <div style={{maxWidth: 800, margin:'40px auto', padding:24}}>
-      <a href="/requests" style={{textDecoration:'none'}}>&larr; Back to list</a>
-      <h1 style={{fontSize:24, fontWeight:700, marginTop:8}}>{wo.title}</h1>
-      <div style={{color:'#666', fontSize:13, marginTop:4}}>
-        {wo.location ? `${wo.location} · ` : ''}{wo.priority ?? '—'} · {wo.status ?? 'open'} · {wo.created_at ? new Date(wo.created_at).toLocaleString() : ''}
-      </div>
+    <main className="max-w-3xl mx-auto p-6 space-y-6">
+      {loading && <p>Loading…</p>}
+      {err && <p className="text-red-600">{err}</p>}
+      {wo && (
+        <div className="space-y-4">
+          <h1 className="text-2xl font-semibold">{wo.title}</h1>
+          <div className="text-gray-700 whitespace-pre-wrap">{wo.details ?? 'No details'}</div>
+          <div className="text-sm text-gray-600">
+            Location: {wo.location ?? '—'} • Status: {wo.status ?? '—'} •{' '}
+            {wo.created_at ? new Date(wo.created_at).toLocaleString() : ''}
+          </div>
 
-      {wo.details && (
-        <pre style={{whiteSpace:'pre-wrap', background:'#fafafa', border:'1px solid #eee', padding:12, borderRadius:8, marginTop:12}}>
-{wo.details}
-        </pre>
-      )}
-
-      <div style={{marginTop:16, borderTop:'1px solid #eee', paddingTop:16}}>
-        <label>
-          <div style={{fontSize:12, color:'#444'}}>Completion note (optional)</div>
-          <textarea
-            rows={4}
-            value={note}
-            onChange={(e)=>setNote(e.target.value)}
-            style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
-          />
-        </label>
-        <div style={{display:'flex', gap:8, marginTop:10}}>
-          <button onClick={markComplete} style={{padding:'10px 12px', borderRadius:8, background:'#111', color:'#fff', border:'1px solid #111'}}>
-            Mark Completed
-          </button>
-          <a href="/requests" style={{padding:'10px 12px', borderRadius:8, border:'1px solid #111', textDecoration:'none'}}>Cancel</a>
+          {wo.status !== 'completed' && (
+            <div className="space-y-3 border rounded p-4">
+              <label className="block">
+                <span className="text-sm">Completion note (optional)</span>
+                <textarea
+                  className="mt-1 w-full border rounded px-3 py-2"
+                  rows={3}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </label>
+              <button
+                onClick={markCompleted}
+                disabled={saving}
+                className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Mark Completed'}
+              </button>
+            </div>
+          )}
         </div>
-      </div>
-    </div>
+      )}
+    </main>
   );
 }

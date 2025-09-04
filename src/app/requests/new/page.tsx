@@ -1,114 +1,80 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 
 export default function NewRequestPage() {
-  const router = useRouter();
   const [title, setTitle] = useState('');
   const [details, setDetails] = useState('');
   const [location, setLocation] = useState('');
-  const [priority, setPriority] = useState<'low'|'medium'|'high'|'emergency'>('medium');
-  const [submitting, setSubmitting] = useState(false);
+  const [requesterName, setRequesterName] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) router.replace('/login');
-    });
-  }, [router]);
-
-  async function submitWO(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
+    setErr(null);
+    setBusy(true);
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth.user) throw new Error('Not signed in');
+      const { data: userRes } = await supabase.auth.getUser();
+      const user = userRes?.user;
+      if (!user) throw new Error('You must be signed in');
 
-      const { data, error } = await supabase
-        .from('work_orders')
-        .insert({
-          title,
-          details: details || null,
-          status: 'open',
-          priority,
-          location: location || null,
-          requester: auth.user.id,
-          requested_by_name: auth.user.email || null
-        })
-        .select('id')
-        .single();
+      // Insert minimal safe fields; DB defaults set status=open, created_at=now()
+      const { error } = await supabase.from('work_orders').insert({
+        requester: user.id,              // satisfies NOT NULL
+        title,
+        details: details || null,
+        location: location || null,
+        requested_by_name: requesterName || null
+      });
+
       if (error) throw error;
-
-      router.push(`/requests/${data!.id}`);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to submit request');
+      router.push('/requests');
+    } catch (e: any) {
+      setErr(e?.message ?? 'Submit failed');
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   }
 
   return (
-    <div style={{maxWidth: 720, margin:'40px auto', padding:24}}>
-      <h1 style={{fontSize: 24, fontWeight:700}}>New Work Order</h1>
+    <main className="max-w-xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">New Work Order</h1>
 
-      <form onSubmit={submitWO} style={{marginTop:16, display:'grid', gap:12}}>
-        <label>
-          <div style={{fontSize:12, color:'#444'}}>Title</div>
-          <input
-            required
-            value={title}
-            onChange={(e)=>setTitle(e.target.value)}
-            style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
-          />
+      <form onSubmit={submit} className="space-y-4">
+        <label className="block">
+          <span className="text-sm">Title</span>
+          <input className="mt-1 w-full border rounded px-3 py-2" value={title} onChange={e => setTitle(e.target.value)} required />
         </label>
 
-        <label>
-          <div style={{fontSize:12, color:'#444'}}>Details</div>
-          <textarea
-            rows={5}
-            value={details}
-            onChange={(e)=>setDetails(e.target.value)}
-            style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
-          />
+        <label className="block">
+          <span className="text-sm">Details</span>
+          <textarea className="mt-1 w-full border rounded px-3 py-2" rows={4} value={details} onChange={e => setDetails(e.target.value)} />
         </label>
 
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-          <label>
-            <div style={{fontSize:12, color:'#444'}}>Location</div>
-            <input
-              value={location}
-              onChange={(e)=>setLocation(e.target.value)}
-              style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
-            />
-          </label>
+        <label className="block">
+          <span className="text-sm">Location</span>
+          <input className="mt-1 w-full border rounded px-3 py-2" value={location} onChange={e => setLocation(e.target.value)} />
+        </label>
 
-          <label>
-            <div style={{fontSize:12, color:'#444'}}>Priority</div>
-            <select
-              value={priority}
-              onChange={(e)=>setPriority(e.target.value as any)}
-              style={{width:'100%', padding:'10px 12px', border:'1px solid #ccc', borderRadius:8}}
-            >
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-              <option value="emergency">emergency</option>
-            </select>
-          </label>
-        </div>
+        <label className="block">
+          <span className="text-sm">Requested By (name)</span>
+          <input className="mt-1 w-full border rounded px-3 py-2" value={requesterName} onChange={e => setRequesterName(e.target.value)} />
+        </label>
 
-        <div style={{display:'flex', gap:8, marginTop:8}}>
-          <button
-            type="submit"
-            disabled={submitting || !title}
-            style={{padding:'10px 12px', borderRadius:8, background:'#111', color:'#fff', border:'1px solid #111'}}
-          >
-            {submitting ? 'Submitting…' : 'Submit'}
-          </button>
-          <a href="/requests" style={{padding:'10px 12px', borderRadius:8, border:'1px solid #111', textDecoration:'none'}}>Cancel</a>
-        </div>
+        {err && <p className="text-red-600">{err}</p>}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {busy ? 'Submitting…' : 'Submit'}
+        </button>
       </form>
-    </div>
+    </main>
   );
 }

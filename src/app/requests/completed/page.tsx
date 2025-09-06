@@ -6,118 +6,81 @@ import { supabase } from '../../../lib/supabase/client';
 
 type WO = {
   id: string;
-  title: string | null;
-  details: string | null;
+  title: string;
+  business: string | null;
   priority: 'emergency' | 'urgent' | 'non_critical' | 'routine' | null;
-  status: 'open' | 'in_progress' | 'completed' | null;
-  created_at: string | null;
-  requested_by_name: string | null;
   location: string | null;
+  status: 'open' | 'in_progress' | 'completed' | string | null;
+  created_at: string;
 };
 
 export default function CompletedRequestsPage() {
+  const [rows, setRows] = useState<WO[]>([]);
   const [loading, setLoading] = useState(true);
-  const [list, setList] = useState<WO[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [isAuthed, setIsAuthed] = useState<boolean>(false);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    const run = async () => {
+    let isMounted = true;
+    (async () => {
       setLoading(true);
-      setError(null);
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const authed = !!sessionData.session;
-      setIsAuthed(authed);
-
-      if (!authed) {
-        setLoading(false);
-        return;
-      }
-
+      setErr(null);
       const { data, error } = await supabase
         .from('work_orders')
-        .select('id,title,details,priority,status,created_at,requested_by_name,location')
+        .select('id, title, business, priority, location, status, created_at')
         .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
-      if (error) setError(error.message);
-      else setList(data || []);
-
+      if (!isMounted) return;
+      if (error) setErr(error.message);
+      else setRows(data as WO[]);
       setLoading(false);
+    })();
+    return () => {
+      isMounted = false;
     };
-    run();
   }, []);
 
-  if (!isAuthed) {
-    return (
-      <main className="max-w-4xl mx-auto p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-semibold">Completed Requests</h1>
-          <div className="flex gap-3">
-            <Link className="px-3 py-2 rounded bg-blue-600 text-white" href="/requests/new">
-              New Request
-            </Link>
-            <Link className="px-3 py-2 rounded border" href="/login">
-              Login
-            </Link>
-          </div>
-        </div>
-        <p className="text-gray-700">
-          Please <Link className="text-blue-600 underline" href="/login">log in</Link> to view completed requests.
-        </p>
-      </main>
-    );
-  }
-
   return (
-    <main className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Completed Requests</h1>
-        <div className="flex gap-3">
-          <Link className="px-3 py-2 rounded border" href="/requests">
-            Open / In-Progress
-          </Link>
-          <Link className="px-3 py-2 rounded bg-blue-600 text-white" href="/requests/new">
-            New Request
-          </Link>
-        </div>
+    <div style={{ maxWidth: 1100, margin: '2rem auto', padding: '1rem' }}>
+      <h1 style={{ fontSize: '1.6rem', marginBottom: 12 }}>Completed Requests</h1>
+
+      <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+        <Link href="/requests">Open / In-Progress</Link>
+        <Link href="/requests/new">New Request</Link>
       </div>
 
-      {loading && <p>Loading…</p>}
-      {error && <p className="text-red-600">Error: {error}</p>}
+      {loading && <div>Loading…</div>}
+      {err && <div style={{ color: 'crimson' }}>{err}</div>}
 
-      {!loading && !error && (
-        <div className="overflow-x-auto border rounded">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left p-3">Completed</th>
-                <th className="text-left p-3">Title</th>
-                <th className="text-left p-3">Priority</th>
-                <th className="text-left p-3">Requested By</th>
-                <th className="text-left p-3">Location</th>
+      {!loading && !err && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
+                <th style={{ padding: '8px 6px' }}>Title</th>
+                <th style={{ padding: '8px 6px' }}>Business</th>
+                <th style={{ padding: '8px 6px' }}>Priority</th>
+                <th style={{ padding: '8px 6px' }}>Location</th>
+                <th style={{ padding: '8px 6px' }}>Completed At</th>
               </tr>
             </thead>
             <tbody>
-              {list.map((wo) => (
-                <tr key={wo.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3 whitespace-nowrap">
-                    {wo.created_at ? new Date(wo.created_at).toLocaleString() : '—'}
+              {rows.map((wo) => (
+                <tr key={wo.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '8px 6px' }}>
+                    <Link href={`/requests/${wo.id}`}>{wo.title}</Link>
                   </td>
-                  <td className="p-3">
-                    <Link className="text-blue-600 underline" href={`/requests/${wo.id}`}>
-                      {wo.title || '(no title)'}
-                    </Link>
+                  <td style={{ padding: '8px 6px' }}>{wo.business || '—'}</td>
+                  <td style={{ padding: '8px 6px' }}>{labelForPriority(wo.priority)}</td>
+                  <td style={{ padding: '8px 6px' }}>{wo.location || '—'}</td>
+                  <td style={{ padding: '8px 6px' }}>
+                    {new Date(wo.created_at).toLocaleString()}
                   </td>
-                  <td className="p-3 capitalize">{wo.priority?.replace('_', ' ') || '—'}</td>
-                  <td className="p-3">{wo.requested_by_name || '—'}</td>
-                  <td className="p-3">{wo.location || '—'}</td>
                 </tr>
               ))}
-              {list.length === 0 && (
+              {rows.length === 0 && (
                 <tr>
-                  <td className="p-4 text-gray-600" colSpan={5}>
+                  <td colSpan={5} style={{ padding: 12, color: '#666' }}>
                     No completed requests yet.
                   </td>
                 </tr>
@@ -126,6 +89,21 @@ export default function CompletedRequestsPage() {
           </table>
         </div>
       )}
-    </main>
+    </div>
   );
+}
+
+function labelForPriority(p: WO['priority']) {
+  switch (p) {
+    case 'emergency':
+      return 'Emergency';
+    case 'urgent':
+      return 'Urgent';
+    case 'non_critical':
+      return 'Non-Critical';
+    case 'routine':
+      return 'Routine';
+    default:
+      return '—';
+  }
 }

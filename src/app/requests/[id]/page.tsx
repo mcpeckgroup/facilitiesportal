@@ -1,165 +1,188 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '../../../lib/supabase/client';
 
 type WO = {
   id: string;
-  title: string | null;
-  details: string | null;
-  priority: 'emergency' | 'urgent' | 'non_critical' | 'routine' | null;
-  status: 'open' | 'in_progress' | 'completed' | null;
-  created_at: string | null;
-  requested_by_name: string | null;
+  title: string;
+  description: string | null;
+  business: string | null;
+  priority: 'emergency' | 'urgent' | 'non_critical' | 'routine' | string | null;
   location: string | null;
+  status: 'open' | 'in_progress' | 'completed' | string | null;
+  requested_by_name: string | null;
+  created_at: string;
 };
 
-export default function RequestDetailPage() {
+export default function RequestDetailsPage() {
   const params = useParams<{ id: string }>();
-  const id = params?.id as string;
   const router = useRouter();
+  const { id } = params;
 
+  const [wo, setWO] = useState<WO | null>(null);
   const [loading, setLoading] = useState(true);
-  const [wo, setWo] = useState<WO | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const [saving, setSaving] = useState(false);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const run = async () => {
+    let alive = true;
+    (async () => {
       setLoading(true);
-      setError(null);
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        setError('Please log in to view this request.');
-        setLoading(false);
-        return;
-      }
-
+      setErr(null);
       const { data, error } = await supabase
         .from('work_orders')
-        .select('*')
+        .select('id, title, description, business, priority, location, status, requested_by_name, created_at')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-      if (error) setError(error.message);
-      else setWo(data);
-
+      if (!alive) return;
+      if (error) setErr(error.message);
+      else setWO(data as WO);
       setLoading(false);
+    })();
+    return () => {
+      alive = false;
     };
-    if (id) run();
   }, [id]);
 
-  const markComplete = async () => {
+  async function markCompleted() {
     if (!wo) return;
+    const note = noteRef.current?.value?.trim() || '';
     setSaving(true);
-    setError(null);
+    setErr(null);
+    setOkMsg(null);
 
-    // Append the completion note to details (non-destructive)
-    const mergedDetails =
-      (wo.details || '') + (note.trim() ? `\n\n[Completed Note]\n${note.trim()}` : '');
+    try {
+      const newDescription = note
+        ? `${wo.description ? wo.description + '\n\n' : ''}Completed note: ${note}`
+        : wo.description ?? '';
 
-    const { error } = await supabase
-      .from('work_orders')
-      .update({ status: 'completed', details: mergedDetails })
-      .eq('id', wo.id);
+      const { error } = await supabase
+        .from('work_orders')
+        .update({ status: 'completed', description: newDescription })
+        .eq('id', wo.id);
 
-    setSaving(false);
-
-    if (error) {
-      setError(error.message);
-      return;
+      if (error) {
+        setErr(error.message);
+      } else {
+        setOkMsg('Marked as completed.');
+        // reload and/or go to completed list
+        setTimeout(() => {
+          router.push('/requests/completed');
+        }, 600);
+      }
+    } catch (e: any) {
+      setErr(e?.message || 'Unknown error');
+    } finally {
+      setSaving(false);
     }
+  }
 
-    router.push('/requests/completed');
-  };
+  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
+  if (err) return <div style={{ padding: 16, color: 'crimson' }}>{err}</div>;
+  if (!wo) return <div style={{ padding: 16 }}>Not found.</div>;
 
   return (
-    <main className="max-w-3xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Request Detail</h1>
-        <div className="flex gap-2">
-          <Link className="px-3 py-2 rounded border" href="/requests">
-            Open / In-Progress
-          </Link>
-          <Link className="px-3 py-2 rounded border" href="/requests/completed">
-            Completed
-          </Link>
+    <div style={{ maxWidth: 900, margin: '2rem auto', padding: '1rem' }}>
+      <div style={{ marginBottom: 12 }}>
+        <Link href="/requests">← Back to Requests</Link>
+      </div>
+
+      <h1 style={{ fontSize: '1.6rem', marginBottom: 8 }}>{wo.title}</h1>
+      <div style={{ color: '#666', marginBottom: 16 }}>
+        Created: {new Date(wo.created_at).toLocaleString()}
+      </div>
+
+      <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+        <InfoRow label="Business" value={wo.business || '—'} />
+        <InfoRow label="Priority" value={labelForPriority(wo.priority)} />
+        <InfoRow label="Location" value={wo.location || '—'} />
+        <InfoRow label="Status" value={labelForStatus(wo.status)} />
+        <InfoRow label="Requested By" value={wo.requested_by_name || '—'} />
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <h3 style={{ margin: '10px 0' }}>Description</h3>
+        <div style={{ whiteSpace: 'pre-wrap', background: '#fafafa', border: '1px solid #eee', padding: 12 }}>
+          {wo.description || '—'}
         </div>
       </div>
 
-      {loading && <p>Loading…</p>}
-      {error && <p className="text-red-600 mb-4">Error: {error}</p>}
-
-      {wo && (
-        <div className="space-y-4">
-          <div className="border rounded p-4">
-            <div className="text-sm text-gray-600">
-              ID: <span className="font-mono">{wo.id}</span>
-            </div>
-            <h2 className="text-xl font-semibold mt-2">{wo.title || '(no title)'}</h2>
-            <div className="text-gray-700 whitespace-pre-wrap mt-2">
-              {wo.details || '(no details)'}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 text-sm">
-              <div>
-                <div className="text-gray-500">Priority</div>
-                <div className="capitalize">{wo.priority?.replace('_', ' ') || '—'}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Status</div>
-                <div className="capitalize">{wo.status?.replace('_', ' ') || '—'}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Requested By</div>
-                <div>{wo.requested_by_name || '—'}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Location</div>
-                <div>{wo.location || '—'}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Created</div>
-                <div>{wo.created_at ? new Date(wo.created_at).toLocaleString() : '—'}</div>
-              </div>
-            </div>
-          </div>
-
-          {wo.status !== 'completed' && (
-            <div className="border rounded p-4">
-              <label className="block text-sm font-medium mb-2" htmlFor="complete-note">
-                Completion note (optional)
-              </label>
-              <textarea
-                id="complete-note"
-                className="w-full border rounded p-2 min-h-[100px]"
-                placeholder="What was done? Any follow-ups?"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-              />
-              <div className="mt-3">
-                <button
-                  onClick={markComplete}
-                  disabled={saving}
-                  className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-60"
-                >
-                  {saving ? 'Marking…' : 'Mark as Completed'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {wo.status === 'completed' && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded text-green-900">
-              This request is already completed.
-            </div>
-          )}
+      {wo.status !== 'completed' && (
+        <div style={{ borderTop: '1px solid #eee', paddingTop: 16 }}>
+          <h3 style={{ margin: '10px 0' }}>Complete with Note (optional)</h3>
+          <textarea
+            ref={noteRef}
+            rows={4}
+            placeholder="What was done / any follow-up"
+            style={{ width: '100%', padding: 8, marginBottom: 10, resize: 'vertical' }}
+          />
+          {okMsg && <div style={{ color: 'seagreen', marginBottom: 10 }}>{okMsg}</div>}
+          {err && <div style={{ color: 'crimson', marginBottom: 10 }}>{err}</div>}
+          <button
+            onClick={markCompleted}
+            disabled={saving}
+            style={{
+              padding: '10px 14px',
+              cursor: 'pointer',
+              background: saving ? '#aaa' : '#111',
+              color: '#fff',
+              border: 'none',
+            }}
+          >
+            {saving ? 'Saving…' : 'Mark Completed'}
+          </button>
         </div>
       )}
-    </main>
+
+      {wo.status === 'completed' && (
+        <div style={{ marginTop: 12, color: 'seagreen' }}>
+          This work order is completed.
+        </div>
+      )}
+    </div>
   );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 10 }}>
+      <div style={{ color: '#555' }}>{label}</div>
+      <div>{value}</div>
+    </div>
+  );
+}
+
+function labelForPriority(p: WO['priority']) {
+  switch (p) {
+    case 'emergency':
+      return 'Emergency';
+    case 'urgent':
+      return 'Urgent';
+    case 'non_critical':
+      return 'Non-Critical';
+    case 'routine':
+      return 'Routine';
+    default:
+      return String(p || '—');
+  }
+}
+
+function labelForStatus(s: WO['status']) {
+  switch (s) {
+    case 'open':
+      return 'Open';
+    case 'in_progress':
+      return 'In Progress';
+    case 'completed':
+      return 'Completed';
+    default:
+      return String(s || '—');
+  }
 }

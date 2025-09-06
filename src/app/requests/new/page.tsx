@@ -1,156 +1,172 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createSupabaseBrowser } from '../../lib/supabase/client';
+import { supabase } from '../../../lib/supabase/client';
+
+type FormState = { submitting: boolean; success?: string; error?: string };
 
 export default function NewRequestPage() {
-  const router = useRouter();
-  const supabase = createSupabaseBrowser();
+  const [form, setForm] = useState({
+    name: '',
+    business: '',
+    location: '',
+    title: '',
+    details: '',
+    priority: 'routine',
+  });
+  const [state, setState] = useState<FormState>({ submitting: false });
 
-  const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const onChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-  // form fields
-  const [name, setName] = useState('');
-  const [title, setTitle] = useState('');
-  const [details, setDetails] = useState('');
-  const [location, setLocation] = useState('');
-  const [priority, setPriority] = useState<'emergency' | 'urgent' | 'non_critical' | 'routine'>('routine');
-  const [business, setBusiness] = useState<'Infuserve America' | 'Pharmetric' | 'Issak'>('Pharmetric');
-
-  async function onSubmit(e: React.FormEvent) {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg(null);
-
-    if (!title.trim()) return setErrorMsg('Title is required.');
-    if (!name.trim()) return setErrorMsg('Your name is required.');
-
-    setSubmitting(true);
+    setState({ submitting: true });
     try {
-      const { error } = await supabase.from('work_orders').insert([
-        {
-          title: title.trim(),
-          details: details.trim() || null,
-          location: location.trim() || null,
-          priority,                       // enum: emergency | urgent | non_critical | routine
-          status: 'open',                 // default first status
-          requested_by_name: name.trim(), // who submitted (no login required)
-          business,                       // text column you added
-        },
-      ]);
+      const { error } = await supabase
+        .from('work_orders')
+        .insert([
+          {
+            title: form.title.trim(),
+            details: form.details.trim(),
+            priority: form.priority, // enum values: emergency | urgent | non_critical | routine
+            status: 'open',
+            requested_by_name: form.name.trim(),
+            business: form.business || null, // assumes a 'business' text column exists
+            location: form.location.trim() || null,
+          },
+        ])
+        .select('id')
+        .single();
 
       if (error) throw error;
 
-      // go to the list or a thank-you page
-      router.push('/requests');
+      setState({ submitting: false, success: 'Request submitted!' });
+      setForm({
+        name: '',
+        business: '',
+        location: '',
+        title: '',
+        details: '',
+        priority: 'routine',
+      });
     } catch (err: any) {
-      setErrorMsg(err.message ?? 'Something went wrong.');
-    } finally {
-      setSubmitting(false);
+      setState({ submitting: false, error: err.message ?? 'Failed to submit' });
     }
-  }
+  };
 
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <h1 className="text-2xl font-semibold mb-4">New Work Order Request</h1>
+    <main className="max-w-2xl mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-6">Submit a Facilities Request</h1>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        {/* Requester name */}
+      <form onSubmit={submit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Your Name *</label>
+          <label htmlFor="name" className="block text-sm font-medium mb-1">
+            Your Name
+          </label>
           <input
-            type="text"
-            className="w-full rounded border px-3 py-2"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Jane Smith"
+            id="name"
+            name="name"
+            value={form.name}
+            onChange={onChange}
             required
+            className="w-full border rounded-md px-3 py-2"
           />
         </div>
 
-        {/* Business */}
         <div>
-          <label className="block text-sm font-medium mb-1">Business *</label>
+          <label htmlFor="business" className="block text-sm font-medium mb-1">
+            Business
+          </label>
           <select
-            className="w-full rounded border px-3 py-2"
-            value={business}
-            onChange={(e) => setBusiness(e.target.value as any)}
+            id="business"
+            name="business"
+            value={form.business}
+            onChange={onChange}
             required
+            className="w-full border rounded-md px-3 py-2 bg-white"
           >
+            <option value="">Select business…</option>
             <option value="Infuserve America">Infuserve America</option>
             <option value="Pharmetric">Pharmetric</option>
             <option value="Issak">Issak</option>
           </select>
         </div>
 
-        {/* Title */}
         <div>
-          <label className="block text-sm font-medium mb-1">Title *</label>
+          <label htmlFor="location" className="block text-sm font-medium mb-1">
+            Location
+          </label>
           <input
-            type="text"
-            className="w-full rounded border px-3 py-2"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Short summary"
-            required
+            id="location"
+            name="location"
+            value={form.location}
+            onChange={onChange}
+            placeholder="e.g., Lab 2, Suite 310"
+            className="w-full border rounded-md px-3 py-2"
           />
         </div>
 
-        {/* Details */}
         <div>
-          <label className="block text-sm font-medium mb-1">Details</label>
+          <label htmlFor="title" className="block text-sm font-medium mb-1">
+            Title
+          </label>
+          <input
+            id="title"
+            name="title"
+            value={form.title}
+            onChange={onChange}
+            required
+            placeholder="Brief summary"
+            className="w-full border rounded-md px-3 py-2"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="details" className="block text-sm font-medium mb-1">
+            Details
+          </label>
           <textarea
-            className="w-full rounded border px-3 py-2 min-h-[120px]"
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            placeholder="Describe the issue or request…"
+            id="details"
+            name="details"
+            value={form.details}
+            onChange={onChange}
+            rows={5}
+            placeholder="Describe the issue or request"
+            className="w-full border rounded-md px-3 py-2"
           />
         </div>
 
-        {/* Location */}
         <div>
-          <label className="block text-sm font-medium mb-1">Location</label>
-          <input
-            type="text"
-            className="w-full rounded border px-3 py-2"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="Building / Room"
-          />
-        </div>
-
-        {/* Priority */}
-        <div>
-          <label className="block text-sm font-medium mb-1">Priority *</label>
+          <label htmlFor="priority" className="block text-sm font-medium mb-1">
+            Priority
+          </label>
           <select
-            className="w-full rounded border px-3 py-2"
-            value={priority}
-            onChange={(e) =>
-              setPriority(e.target.value as 'emergency' | 'urgent' | 'non_critical' | 'routine')
-            }
-            required
+            id="priority"
+            name="priority"
+            value={form.priority}
+            onChange={onChange}
+            className="w-full border rounded-md px-3 py-2 bg-white"
           >
             <option value="emergency">Emergency</option>
-            <option value="urgent">Urgent</option>
+            <option value="urgent">Urgant</option>
             <option value="non_critical">Non-Critical</option>
             <option value="routine">Routine</option>
           </select>
         </div>
 
-        {errorMsg && (
-          <p className="text-sm text-red-600">{errorMsg}</p>
-        )}
-
         <button
           type="submit"
-          disabled={submitting}
-          className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+          disabled={state.submitting}
+          className="w-full rounded-md px-4 py-2 border bg-black text-white disabled:opacity-60"
         >
-          {submitting ? 'Submitting…' : 'Submit Request'}
+          {state.submitting ? 'Submitting…' : 'Submit Request'}
         </button>
+
+        {state.success && <p className="text-green-600 text-sm">{state.success}</p>}
+        {state.error && <p className="text-red-600 text-sm">Error: {state.error}</p>}
       </form>
-      {/* Note: Back-to-list link intentionally removed */}
     </main>
   );
 }

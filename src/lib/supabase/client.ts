@@ -2,7 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// If you have generated DB types, you can replace `any` with them.
+// If you have generated DB types, replace `any` with them.
 type Database = any;
 
 /**

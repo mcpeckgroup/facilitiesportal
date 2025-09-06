@@ -2,149 +2,155 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { getSupabase } from '../../../lib/supabase/client';
-
-const BUSINESSES = ['Infuserve America', 'Pharmetric', 'Issak'] as const;
-const PRIORITIES = [
-  { label: 'Emergency', value: 'emergency' },
-  { label: 'Urgent', value: 'urgent' },
-  { label: 'Non-Critical', value: 'non_critical' },
-  { label: 'Routine', value: 'routine' },
-] as const;
+import { createSupabaseBrowser } from '../../lib/supabase/client';
 
 export default function NewRequestPage() {
   const router = useRouter();
+  const supabase = createSupabaseBrowser();
+
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // form fields
+  const [name, setName] = useState('');
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [business, setBusiness] = useState<typeof BUSINESSES[number] | ''>('');
-  const [priority, setPriority] = useState<typeof PRIORITIES[number]['value']>('routine');
+  const [details, setDetails] = useState('');
   const [location, setLocation] = useState('');
-  const [requestedByName, setRequestedByName] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [priority, setPriority] = useState<'emergency' | 'urgent' | 'non_critical' | 'routine'>('routine');
+  const [business, setBusiness] = useState<'Infuserve America' | 'Pharmetric' | 'Issak'>('Pharmetric');
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null);
-    setSaving(true);
+    setErrorMsg(null);
+
+    if (!title.trim()) return setErrorMsg('Title is required.');
+    if (!name.trim()) return setErrorMsg('Your name is required.');
+
+    setSubmitting(true);
     try {
-      const supabase = getSupabase();
       const { error } = await supabase.from('work_orders').insert([
         {
-          title,
-          description,
-          business: business || null,
-          priority, // enum (emergency|urgent|non_critical|routine)
-          status: 'open',
-          location: location || null,
-          requested_by_name: requestedByName || null,
-          created_at: new Date().toISOString(),
+          title: title.trim(),
+          details: details.trim() || null,
+          location: location.trim() || null,
+          priority,                       // enum: emergency | urgent | non_critical | routine
+          status: 'open',                 // default first status
+          requested_by_name: name.trim(), // who submitted (no login required)
+          business,                       // text column you added
         },
       ]);
+
       if (error) throw error;
+
+      // go to the list or a thank-you page
       router.push('/requests');
-    } catch (e: any) {
-      setErr(e.message ?? 'Failed to submit');
+    } catch (err: any) {
+      setErrorMsg(err.message ?? 'Something went wrong.');
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   }
 
   return (
-    <main className="max-w-3xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">New Request</h1>
-        <Link href="/requests" className="text-blue-600 hover:underline">
-          ← Back to list
-        </Link>
-      </div>
-
-      {err && <div className="rounded bg-red-50 text-red-700 p-3 text-sm">{err}</div>}
+    <main className="mx-auto max-w-2xl p-6">
+      <h1 className="text-2xl font-semibold mb-4">New Work Order Request</h1>
 
       <form onSubmit={onSubmit} className="space-y-4">
+        {/* Requester name */}
         <div>
-          <label className="block text-sm mb-1">Title</label>
+          <label className="block text-sm font-medium mb-1">Your Name *</label>
           <input
+            type="text"
+            className="w-full rounded border px-3 py-2"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Jane Smith"
             required
-            className="w-full border rounded px-3 py-2"
+          />
+        </div>
+
+        {/* Business */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Business *</label>
+          <select
+            className="w-full rounded border px-3 py-2"
+            value={business}
+            onChange={(e) => setBusiness(e.target.value as any)}
+            required
+          >
+            <option value="Infuserve America">Infuserve America</option>
+            <option value="Pharmetric">Pharmetric</option>
+            <option value="Issak">Issak</option>
+          </select>
+        </div>
+
+        {/* Title */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Title *</label>
+          <input
+            type="text"
+            className="w-full rounded border px-3 py-2"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Short summary"
+            required
           />
         </div>
 
+        {/* Details */}
         <div>
-          <label className="block text-sm mb-1">Description</label>
+          <label className="block text-sm font-medium mb-1">Details</label>
           <textarea
-            className="w-full border rounded px-3 py-2 min-h-28"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Details"
+            className="w-full rounded border px-3 py-2 min-h-[120px]"
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            placeholder="Describe the issue or request…"
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm mb-1">Business</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={business}
-              onChange={(e) => setBusiness(e.target.value as any)}
-            >
-              <option value="">Select…</option>
-              {BUSINESSES.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm mb-1">Priority</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as any)}
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm mb-1">Location</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g., Suite 200"
-            />
-          </div>
-        </div>
-
+        {/* Location */}
         <div>
-          <label className="block text-sm mb-1">Requested By (name)</label>
+          <label className="block text-sm font-medium mb-1">Location</label>
           <input
-            className="w-full border rounded px-3 py-2"
-            value={requestedByName}
-            onChange={(e) => setRequestedByName(e.target.value)}
-            placeholder="Jane Doe"
+            type="text"
+            className="w-full rounded border px-3 py-2"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Building / Room"
           />
         </div>
+
+        {/* Priority */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Priority *</label>
+          <select
+            className="w-full rounded border px-3 py-2"
+            value={priority}
+            onChange={(e) =>
+              setPriority(e.target.value as 'emergency' | 'urgent' | 'non_critical' | 'routine')
+            }
+            required
+          >
+            <option value="emergency">Emergency</option>
+            <option value="urgent">Urgent</option>
+            <option value="non_critical">Non-Critical</option>
+            <option value="routine">Routine</option>
+          </select>
+        </div>
+
+        {errorMsg && (
+          <p className="text-sm text-red-600">{errorMsg}</p>
+        )}
 
         <button
           type="submit"
-          disabled={saving}
-          className="rounded bg-black text-white px-4 py-2 disabled:opacity-50"
+          disabled={submitting}
+          className="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
         >
-          {saving ? 'Submitting…' : 'Submit request'}
+          {submitting ? 'Submitting…' : 'Submit Request'}
         </button>
       </form>
+      {/* Note: Back-to-list link intentionally removed */}
     </main>
   );
 }

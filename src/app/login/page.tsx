@@ -2,70 +2,78 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabase/client';
+import Link from 'next/link';
+import { getSupabase } from '../../lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
-  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const onSubmit = async (e: React.FormEvent) => {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-
-    if (error) {
-      setErr(error.message);
-      return;
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      router.push('/requests');
+    } catch (e: any) {
+      setErr(e.message ?? 'Login failed');
+    } finally {
+      setLoading(false);
     }
-    router.push('/requests');
-  };
+  }
 
   return (
-    <main className="max-w-md mx-auto pt-10">
-      <h1 className="text-2xl font-semibold mb-6">Login</h1>
+    <main className="min-h-dvh flex items-center justify-center p-6">
+      <div className="w-full max-w-sm space-y-6">
+        <h1 className="text-2xl font-semibold">Sign in</h1>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="block mb-1 text-sm">Email</label>
-          <input
-            type="email"
-            className="w-full border rounded-md px-3 py-2"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
+        {err && <div className="rounded bg-red-50 text-red-700 p-3 text-sm">{err}</div>}
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm mb-1">Email</label>
+            <input
+              required
+              type="email"
+              className="w-full border rounded px-3 py-2"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@company.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Password</label>
+            <input
+              required
+              type="password"
+              className="w-full border rounded px-3 py-2"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded bg-black text-white py-2 disabled:opacity-50"
+          >
+            {loading ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+
+        <div className="text-sm text-center">
+          <Link href="/" className="text-blue-600 hover:underline">
+            ← Back to home
+          </Link>
         </div>
-
-        <div>
-          <label className="block mb-1 text-sm">Password</label>
-          <input
-            type="password"
-            className="w-full border rounded-md px-3 py-2"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
-        </div>
-
-        {err && <p className="text-red-600 text-sm">{err}</p>}
-
-        <button
-          type="submit"
-          className="w-full px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-60"
-          disabled={loading}
-        >
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+      </div>
     </main>
   );
 }

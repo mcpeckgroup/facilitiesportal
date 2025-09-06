@@ -1,188 +1,119 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '../../../lib/supabase/client';
+import { getSupabase } from '../../../lib/supabase/client';
 
 type WO = {
   id: string;
-  title: string;
+  title: string | null;
   description: string | null;
+  status: string | null;
+  priority: string | null;
   business: string | null;
-  priority: 'emergency' | 'urgent' | 'non_critical' | 'routine' | string | null;
   location: string | null;
-  status: 'open' | 'in_progress' | 'completed' | string | null;
   requested_by_name: string | null;
-  created_at: string;
+  created_at: string | null;
 };
 
-export default function RequestDetailsPage() {
-  const params = useParams<{ id: string }>();
+export default function RequestDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { id } = params;
-
-  const [wo, setWO] = useState<WO | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [wo, setWo] = useState<WO | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [note, setNote] = useState('');
 
   useEffect(() => {
-    let alive = true;
     (async () => {
-      setLoading(true);
-      setErr(null);
-      const { data, error } = await supabase
-        .from('work_orders')
-        .select('id, title, description, business, priority, location, status, requested_by_name, created_at')
-        .eq('id', id)
-        .maybeSingle();
+      try {
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+          .from('work_orders')
+          .select(
+            'id,title,description,status,priority,business,location,requested_by_name,created_at'
+          )
+          .eq('id', id)
+          .maybeSingle();
 
-      if (!alive) return;
-      if (error) setErr(error.message);
-      else setWO(data as WO);
-      setLoading(false);
+        if (error) throw error;
+        setWo(data as WO);
+      } catch (e: any) {
+        setErr(e.message ?? 'Failed to load');
+      } finally {
+        setLoading(false);
+      }
     })();
-    return () => {
-      alive = false;
-    };
   }, [id]);
 
   async function markCompleted() {
-    if (!wo) return;
-    const note = noteRef.current?.value?.trim() || '';
-    setSaving(true);
     setErr(null);
-    setOkMsg(null);
-
+    setSaving(true);
     try {
-      const newDescription = note
-        ? `${wo.description ? wo.description + '\n\n' : ''}Completed note: ${note}`
-        : wo.description ?? '';
-
+      const supabase = getSupabase();
+      // If you have a column for notes like completion_note, include it here.
       const { error } = await supabase
         .from('work_orders')
-        .update({ status: 'completed', description: newDescription })
-        .eq('id', wo.id);
+        .update({ status: 'completed' /*, completion_note: note || null */ })
+        .eq('id', id);
 
-      if (error) {
-        setErr(error.message);
-      } else {
-        setOkMsg('Marked as completed.');
-        // reload and/or go to completed list
-        setTimeout(() => {
-          router.push('/requests/completed');
-        }, 600);
-      }
+      if (error) throw error;
+      router.push('/requests/completed');
     } catch (e: any) {
-      setErr(e?.message || 'Unknown error');
+      setErr(e.message ?? 'Update failed');
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
-  if (err) return <div style={{ padding: 16, color: 'crimson' }}>{err}</div>;
-  if (!wo) return <div style={{ padding: 16 }}>Not found.</div>;
-
   return (
-    <div style={{ maxWidth: 900, margin: '2rem auto', padding: '1rem' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Link href="/requests">← Back to Requests</Link>
+    <main className="max-w-3xl mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <Link href="/requests" className="text-blue-600 hover:underline">
+          ← Back
+        </Link>
+        <div />
       </div>
 
-      <h1 style={{ fontSize: '1.6rem', marginBottom: 8 }}>{wo.title}</h1>
-      <div style={{ color: '#666', marginBottom: 16 }}>
-        Created: {new Date(wo.created_at).toLocaleString()}
-      </div>
+      {loading && <p>Loading…</p>}
+      {err && <div className="rounded bg-red-50 text-red-700 p-3 text-sm">{err}</div>}
+      {!loading && wo && (
+        <div className="space-y-4">
+          <h1 className="text-2xl font-semibold">{wo.title ?? '(no title)'}</h1>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div><span className="font-medium">Status:</span> {wo.status}</div>
+            <div><span className="font-medium">Priority:</span> {wo.priority}</div>
+            <div><span className="font-medium">Business:</span> {wo.business ?? '—'}</div>
+            <div><span className="font-medium">Location:</span> {wo.location ?? '—'}</div>
+            <div><span className="font-medium">Requested By:</span> {wo.requested_by_name ?? '—'}</div>
+            <div><span className="font-medium">Created:</span> {wo.created_at ? new Date(wo.created_at).toLocaleString() : '—'}</div>
+          </div>
+          <div>
+            <h2 className="font-medium mb-1">Description</h2>
+            <p className="whitespace-pre-wrap">{wo.description ?? '—'}</p>
+          </div>
 
-      <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-        <InfoRow label="Business" value={wo.business || '—'} />
-        <InfoRow label="Priority" value={labelForPriority(wo.priority)} />
-        <InfoRow label="Location" value={wo.location || '—'} />
-        <InfoRow label="Status" value={labelForStatus(wo.status)} />
-        <InfoRow label="Requested By" value={wo.requested_by_name || '—'} />
-      </div>
+          <div className="space-y-2">
+            <label className="block text-sm">Completion note (optional)</label>
+            <textarea
+              className="w-full border rounded px-3 py-2 min-h-24"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="What was done?"
+            />
+          </div>
 
-      <div style={{ marginBottom: 20 }}>
-        <h3 style={{ margin: '10px 0' }}>Description</h3>
-        <div style={{ whiteSpace: 'pre-wrap', background: '#fafafa', border: '1px solid #eee', padding: 12 }}>
-          {wo.description || '—'}
-        </div>
-      </div>
-
-      {wo.status !== 'completed' && (
-        <div style={{ borderTop: '1px solid #eee', paddingTop: 16 }}>
-          <h3 style={{ margin: '10px 0' }}>Complete with Note (optional)</h3>
-          <textarea
-            ref={noteRef}
-            rows={4}
-            placeholder="What was done / any follow-up"
-            style={{ width: '100%', padding: 8, marginBottom: 10, resize: 'vertical' }}
-          />
-          {okMsg && <div style={{ color: 'seagreen', marginBottom: 10 }}>{okMsg}</div>}
-          {err && <div style={{ color: 'crimson', marginBottom: 10 }}>{err}</div>}
           <button
             onClick={markCompleted}
             disabled={saving}
-            style={{
-              padding: '10px 14px',
-              cursor: 'pointer',
-              background: saving ? '#aaa' : '#111',
-              color: '#fff',
-              border: 'none',
-            }}
+            className="rounded bg-black text-white px-4 py-2 disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Mark Completed'}
+            {saving ? 'Marking…' : 'Mark as Completed'}
           </button>
         </div>
       )}
-
-      {wo.status === 'completed' && (
-        <div style={{ marginTop: 12, color: 'seagreen' }}>
-          This work order is completed.
-        </div>
-      )}
-    </div>
+    </main>
   );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 10 }}>
-      <div style={{ color: '#555' }}>{label}</div>
-      <div>{value}</div>
-    </div>
-  );
-}
-
-function labelForPriority(p: WO['priority']) {
-  switch (p) {
-    case 'emergency':
-      return 'Emergency';
-    case 'urgent':
-      return 'Urgent';
-    case 'non_critical':
-      return 'Non-Critical';
-    case 'routine':
-      return 'Routine';
-    default:
-      return String(p || '—');
-  }
-}
-
-function labelForStatus(s: WO['status']) {
-  switch (s) {
-    case 'open':
-      return 'Open';
-    case 'in_progress':
-      return 'In Progress';
-    case 'completed':
-      return 'Completed';
-    default:
-      return String(s || '—');
-  }
 }

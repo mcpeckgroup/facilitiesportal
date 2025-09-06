@@ -2,196 +2,149 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase/client';
+import Link from 'next/link';
+import { getSupabase } from '../../../lib/supabase/client';
 
-type PriorityValue = 'emergency' | 'urgent' | 'non_critical' | 'routine';
-
-const PRIORITY_OPTIONS: { label: string; value: PriorityValue }[] = [
-  { label: 'Emergency',     value: 'emergency' },
-  { label: 'Urgent',        value: 'urgent' },       // note: spelled 'urgent' for DB enum
-  { label: 'Non-Critical',  value: 'non_critical' },
-  { label: 'Routine',       value: 'routine' },
-];
-
-const BUSINESS_OPTIONS = [
-  'Infuserve America',
-  'Pharmetric',
-  'Issak',
+const BUSINESSES = ['Infuserve America', 'Pharmetric', 'Issak'] as const;
+const PRIORITIES = [
+  { label: 'Emergency', value: 'emergency' },
+  { label: 'Urgent', value: 'urgent' },
+  { label: 'Non-Critical', value: 'non_critical' },
+  { label: 'Routine', value: 'routine' },
 ] as const;
 
 export default function NewRequestPage() {
   const router = useRouter();
-
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [business, setBusiness] = useState<typeof BUSINESSES[number] | ''>('');
+  const [priority, setPriority] = useState<typeof PRIORITIES[number]['value']>('routine');
   const [location, setLocation] = useState('');
-  const [requesterName, setRequesterName] = useState('');
-  const [requesterEmail, setRequesterEmail] = useState('');
-  const [priority, setPriority] = useState<PriorityValue>('routine');
-  const [business, setBusiness] = useState<(typeof BUSINESS_OPTIONS)[number]>('Infuserve America');
+  const [requestedByName, setRequestedByName] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
-
-  async function handleSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSubmitting(true);
-    setErrorMsg(null);
-    setOkMsg(null);
-
+    setErr(null);
+    setSaving(true);
     try {
-      // Insert into public.work_orders
+      const supabase = getSupabase();
       const { error } = await supabase.from('work_orders').insert([
         {
           title,
           description,
-          location,
-          requested_by_name: requesterName || null,
-          requested_by_user: null, // public form, no auth user
-          priority,                // must match enum in DB if column is enum
-          status: 'open',          // new requests start as open
-          business,                // <-- NEW FIELD
+          business: business || null,
+          priority, // enum (emergency|urgent|non_critical|routine)
+          status: 'open',
+          location: location || null,
+          requested_by_name: requestedByName || null,
+          created_at: new Date().toISOString(),
         },
       ]);
-
-      if (error) {
-        setErrorMsg(error.message);
-      } else {
-        setOkMsg('Request submitted successfully!');
-        // optional: redirect to a thank-you or home after a short delay
-        setTimeout(() => {
-          router.push('/'); // change to '/requests' if you prefer
-        }, 800);
-      }
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Unknown error');
+      if (error) throw error;
+      router.push('/requests');
+    } catch (e: any) {
+      setErr(e.message ?? 'Failed to submit');
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '2rem auto', padding: '1rem' }}>
-      <h1 style={{ fontSize: '1.75rem', marginBottom: '0.75rem' }}>New Facilities Request</h1>
-      <p style={{ marginBottom: '1rem' }}>
-        Fill out the form below to submit a work order request.
-      </p>
+    <main className="max-w-3xl mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">New Request</h1>
+        <Link href="/requests" className="text-blue-600 hover:underline">
+          ← Back to list
+        </Link>
+      </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '0.75rem' }}>
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span>Business <span style={{ color: 'crimson' }}>*</span></span>
-          <select
-            value={business}
-            onChange={(e) => setBusiness(e.target.value as (typeof BUSINESS_OPTIONS)[number])}
-            required
-            style={{ padding: 8 }}
-          >
-            {BUSINESS_OPTIONS.map((b) => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
-        </label>
+      {err && <div className="rounded bg-red-50 text-red-700 p-3 text-sm">{err}</div>}
 
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span>Title <span style={{ color: 'crimson' }}>*</span></span>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm mb-1">Title</label>
           <input
-            type="text"
+            required
+            className="w-full border rounded px-3 py-2"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            required
-            placeholder="Brief summary"
-            style={{ padding: 8 }}
+            placeholder="Short summary"
           />
-        </label>
-
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span>Description</span>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Details of the issue"
-            rows={5}
-            style={{ padding: 8, resize: 'vertical' }}
-          />
-        </label>
-
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span>Location</span>
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="e.g., Building A, Room 204"
-            style={{ padding: 8 }}
-          />
-        </label>
-
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span>Priority <span style={{ color: 'crimson' }}>*</span></span>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as PriorityValue)}
-            required
-            style={{ padding: 8 }}
-          >
-            {PRIORITY_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div style={{ display: 'grid', gap: 6, gridTemplateColumns: '1fr 1fr' }}>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span>Your name</span>
-            <input
-              type="text"
-              value={requesterName}
-              onChange={(e) => setRequesterName(e.target.value)}
-              placeholder="Jane Smith"
-              style={{ padding: 8 }}
-            />
-          </label>
-
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span>Your email</span>
-            <input
-              type="email"
-              value={requesterEmail}
-              onChange={(e) => setRequesterEmail(e.target.value)}
-              placeholder="jane@example.com"
-              style={{ padding: 8 }}
-            />
-          </label>
         </div>
 
-        {errorMsg && (
-          <div style={{ color: 'crimson', marginTop: 8 }}>
-            {errorMsg}
+        <div>
+          <label className="block text-sm mb-1">Description</label>
+          <textarea
+            className="w-full border rounded px-3 py-2 min-h-28"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Details"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Business</label>
+            <select
+              className="w-full border rounded px-3 py-2"
+              value={business}
+              onChange={(e) => setBusiness(e.target.value as any)}
+            >
+              <option value="">Select…</option>
+              {BUSINESSES.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
-        {okMsg && (
-          <div style={{ color: 'seagreen', marginTop: 8 }}>
-            {okMsg}
+
+          <div>
+            <label className="block text-sm mb-1">Priority</label>
+            <select
+              className="w-full border rounded px-3 py-2"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as any)}
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+
+          <div>
+            <label className="block text-sm mb-1">Location</label>
+            <input
+              className="w-full border rounded px-3 py-2"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="e.g., Suite 200"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Requested By (name)</label>
+          <input
+            className="w-full border rounded px-3 py-2"
+            value={requestedByName}
+            onChange={(e) => setRequestedByName(e.target.value)}
+            placeholder="Jane Doe"
+          />
+        </div>
 
         <button
           type="submit"
-          disabled={submitting}
-          style={{
-            padding: '10px 14px',
-            cursor: 'pointer',
-            background: submitting ? '#aaa' : '#111',
-            color: '#fff',
-            border: 'none',
-          }}
+          disabled={saving}
+          className="rounded bg-black text-white px-4 py-2 disabled:opacity-50"
         >
-          {submitting ? 'Submitting…' : 'Submit Request'}
+          {saving ? 'Submitting…' : 'Submit request'}
         </button>
       </form>
-    </div>
+    </main>
   );
 }

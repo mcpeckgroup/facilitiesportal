@@ -2,74 +2,63 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../../lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 
 type Priority = 'emergency' | 'urgent' | 'non_critical' | 'routine';
 
 export default function NewRequestPage() {
   const router = useRouter();
-
-  const [title, setTitle] = useState('');
-  const [details, setDetails] = useState('');
-  const [location, setLocation] = useState('');
-  const [requestedByName, setRequestedByName] = useState('');
-  const [priority, setPriority] = useState<Priority>('routine');
-  const [business, setBusiness] = useState<string>('Pharmetric');
   const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [business, setBusiness] = useState('Infuserve America');
+  const [priority, setPriority] = useState<Priority>('routine');
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    setErr(null);
+    setError(null);
 
-    const { error } = await supabase.from('work_orders').insert([
-      {
+    try {
+      const { error: insertErr } = await supabase.from('work_orders').insert({
         title,
-        details: details || null,
-        location: location || null,
-        requested_by_name: requestedByName || null,
-        priority,
-        business: business || null,
-        status: 'open',
-      },
-    ]);
+        description,
+        business,                  // requires a TEXT "business" column in work_orders
+        priority,                  // enum: 'emergency' | 'urgent' | 'non_critical' | 'routine'
+        status: 'open',            // assumes status enum includes 'open'
+      });
 
-    if (error) {
-      setErr(error.message);
+      if (insertErr) throw insertErr;
+      setDone(true);
+    } catch (err: any) {
+      setError(err.message ?? 'Something went wrong.');
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    setDone(true);
-    setSubmitting(false);
-    // Clear the form
-    setTitle('');
-    setDetails('');
-    setLocation('');
-    setRequestedByName('');
-    setPriority('routine');
-    setBusiness('Pharmetric');
-  };
+  }
 
   if (done) {
     return (
-      <main className="max-w-xl mx-auto p-6">
-        <h1 className="text-2xl font-semibold mb-4">Request Submitted</h1>
-        <p className="mb-6">Thanks! Your request has been recorded.</p>
+      <main className="max-w-2xl mx-auto p-6">
+        <h1 className="text-2xl font-semibold mb-2">Request submitted ✅</h1>
+        <p className="mb-6">Thanks! Your work request has been recorded.</p>
         <div className="flex gap-3">
           <button
-            onClick={() => setDone(false)}
-            className="rounded-md border px-4 py-2 hover:bg-gray-50"
+            onClick={() => router.push('/')}
+            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+            type="button"
           >
-            Submit another request
+            Go to Home
           </button>
           <button
-            onClick={() => router.push('/')}
-            className="rounded-md border px-4 py-2 bg-black text-white hover:opacity-90"
+            onClick={() => router.push('/requests/new')}
+            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+            type="button"
           >
-            Go to homepage
+            Submit Another
           </button>
         </div>
       </main>
@@ -77,77 +66,58 @@ export default function NewRequestPage() {
   }
 
   return (
-    <main className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-6">New Request</h1>
+    <main className="max-w-2xl mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-4">New Work Request</h1>
 
-      {err && <p className="mb-4 text-red-600">Error: {err}</p>}
+      {error && (
+        <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="block text-sm font-medium mb-1">Title *</label>
+          <label className="mb-1 block text-sm font-medium">Title *</label>
           <input
-            required
+            className="w-full rounded border p-2"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full rounded-md border px-3 py-2"
+            required
             placeholder="Short summary"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Details</label>
+          <label className="mb-1 block text-sm font-medium">Description</label>
           <textarea
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            className="w-full rounded-md border px-3 py-2 min-h-[120px]"
-            placeholder="Describe the issue"
+            className="w-full rounded border p-2 min-h-[120px]"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What needs to be done?"
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Location</label>
-            <input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className="w-full rounded-md border px-3 py-2"
-              placeholder="Room / Area"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Requested By</label>
-            <input
-              value={requestedByName}
-              onChange={(e) => setRequestedByName(e.target.value)}
-              className="w-full rounded-md border px-3 py-2"
-              placeholder="Your name"
-            />
-          </div>
-        </div>
-
-        {/* Business dropdown */}
         <div>
-          <label className="block text-sm font-medium mb-1">Business</label>
+          <label className="mb-1 block text-sm font-medium">Business</label>
           <select
+            className="w-full rounded border p-2"
             value={business}
             onChange={(e) => setBusiness(e.target.value)}
-            className="w-full rounded-md border px-3 py-2 bg-white"
           >
-            <option value="Infuserve America">Infuserve America</option>
-            <option value="Pharmetric">Pharmetric</option>
-            <option value="Issak">Issak</option>
+            <option>Infuserve America</option>
+            <option>Pharmetric</option>
+            <option>issak</option>
           </select>
         </div>
 
-        {/* Priority dropdown */}
         <div>
-          <label className="block text-sm font-medium mb-1">Priority</label>
+          <label className="mb-1 block text-sm font-medium">Priority</label>
           <select
+            className="w-full rounded border p-2"
             value={priority}
             onChange={(e) => setPriority(e.target.value as Priority)}
-            className="w-full rounded-md border px-3 py-2 bg-white"
           >
+            {/* Labels are friendly; values match your enum */}
             <option value="emergency">Emergency</option>
             <option value="urgent">Urgent</option>
             <option value="non_critical">Non-Critical</option>
@@ -156,9 +126,9 @@ export default function NewRequestPage() {
         </div>
 
         <button
+          className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           type="submit"
           disabled={submitting}
-          className="rounded-md border px-4 py-2 bg-black text-white disabled:opacity-60"
         >
           {submitting ? 'Submitting…' : 'Submit Request'}
         </button>

@@ -7,9 +7,13 @@ import { supabase } from "@/lib/supabase/client";
 type WorkOrder = {
   id: string;
   title: string;
-  description: string;
+  description?: string;
+  business?: string;
+  priority?: string;
   status: string;
-  completion_note: string;
+  completion_note?: string;
+  submitter_name?: string;
+  submitter_email?: string;
 };
 
 export default function RequestDetailPage() {
@@ -20,61 +24,72 @@ export default function RequestDetailPage() {
 
   useEffect(() => {
     async function fetchRequest() {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("work_orders")
         .select("*")
         .eq("id", id)
         .single();
 
-      if (error) {
-        console.error("Error fetching request:", error);
-      } else {
+      if (data) {
         setRequest(data);
+        setCompletionNote(data.completion_note || "");
       }
     }
-    fetchRequest();
+    if (id) fetchRequest();
   }, [id]);
 
-  async function markCompleted() {
+  const markCompleted = async () => {
     if (!id) return;
-    const { error } = await supabase
+    await supabase
       .from("work_orders")
       .update({ status: "completed", completion_note: completionNote })
       .eq("id", id);
+    router.push("/requests/completed");
+  };
 
-    if (error) {
-      console.error("Error marking complete:", error);
-    } else {
-      router.push("/requests/completed");
-    }
+  if (!request) {
+    return <div className="p-6">Loading...</div>;
   }
-
-  if (!request) return <p className="p-6">Loading...</p>;
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-bold">{request.title}</h1>
-      <p>{request.description}</p>
+      <h1 className="text-2xl font-bold mb-4">{request.title}</h1>
 
-      {request.status === "open" && (
+      {request.description && (
+        <p className="mb-2 text-gray-700">{request.description}</p>
+      )}
+
+      <p><strong>Business:</strong> {request.business}</p>
+      <p><strong>Priority:</strong> {request.priority}</p>
+      <p><strong>Status:</strong> {request.status}</p>
+
+      {/* Show submitter info */}
+      <p>
+        <strong>Submitted by:</strong> {request.submitter_name} (
+        {request.submitter_email})
+      </p>
+
+      {request.status !== "completed" && (
         <div className="mt-4">
           <textarea
-            placeholder="Completion notes"
             value={completionNote}
             onChange={(e) => setCompletionNote(e.target.value)}
-            className="border p-2 w-full mb-2"
+            placeholder="Add completion notes..."
+            className="w-full border p-2 rounded"
           />
           <button
             onClick={markCompleted}
-            className="px-3 py-1 bg-green-500 text-white rounded"
+            className="mt-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
           >
             Mark as Completed
           </button>
         </div>
       )}
 
-      {request.status === "completed" && (
-        <p className="mt-4 text-gray-700">Completion Note: {request.completion_note}</p>
+      {request.status === "completed" && request.completion_note && (
+        <p className="mt-4 text-gray-700">
+          <strong>Completion Notes:</strong> {request.completion_note}
+        </p>
       )}
     </div>
   );

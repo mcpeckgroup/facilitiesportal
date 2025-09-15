@@ -1,45 +1,63 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { supabase } from '../../lib/supabase/client';
+import { useEffect, useState } from "react";
+import supabase from "@/lib/supabase/client";
+
+type WorkOrder = {
+  id: string;
+  title: string;
+  description: string;
+  business: string;
+  priority: string;
+  status: string;
+  created_at: string;
+};
 
 export default function RequestsPage() {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [businessFilter, setBusinessFilter] = useState<string>('');
-  const [priorityFilter, setPriorityFilter] = useState<string>('');
+  const [requests, setRequests] = useState<WorkOrder[]>([]);
+  const [businessFilter, setBusinessFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
 
   useEffect(() => {
     async function fetchRequests() {
-      const { data, error } = await supabase
-        .from('work_orders')
-        .select('*')
-        .neq('status', 'completed')
-        .order('created_at', { ascending: false });
+      let query = supabase.from("work_orders").select("*").eq("status", "open");
 
-      if (error) console.error(error);
+      if (businessFilter) query = query.eq("business", businessFilter);
+      if (priorityFilter) query = query.eq("priority", priorityFilter);
+
+      const { data, error } = await query.order("created_at", { ascending: false });
+
+      if (error) console.error("Error fetching requests:", error);
       else setRequests(data || []);
     }
 
     fetchRequests();
-  }, []);
-
-  const filtered = requests.filter((r) => {
-    return (
-      (!businessFilter || r.business === businessFilter) &&
-      (!priorityFilter || r.priority === priorityFilter)
-    );
-  });
+  }, [businessFilter, priorityFilter]);
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Open Requests</h1>
+      {/* Tabs */}
+      <div className="mb-4 flex space-x-4">
+        <a
+          href="/requests"
+          className="px-3 py-2 rounded-md text-sm font-medium bg-blue-600 text-white"
+        >
+          Open Requests
+        </a>
+        <a
+          href="/requests/completed"
+          className="px-3 py-2 rounded-md text-sm font-medium bg-gray-200 hover:bg-gray-300"
+        >
+          Completed Requests
+        </a>
+      </div>
 
-      <div className="flex gap-4 mb-4">
+      {/* Filters */}
+      <div className="mb-4 flex space-x-4">
         <select
-          className="border px-2 py-1"
           value={businessFilter}
           onChange={(e) => setBusinessFilter(e.target.value)}
+          className="border px-2 py-1 rounded"
         >
           <option value="">All Businesses</option>
           <option value="Infuserve America">Infuserve America</option>
@@ -48,9 +66,9 @@ export default function RequestsPage() {
         </select>
 
         <select
-          className="border px-2 py-1"
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value)}
+          className="border px-2 py-1 rounded"
         >
           <option value="">All Priorities</option>
           <option value="emergency">Emergency</option>
@@ -60,25 +78,20 @@ export default function RequestsPage() {
         </select>
       </div>
 
-      <ul className="space-y-3">
-        {filtered.map((req) => (
-          <li key={req.id} className="border p-3 rounded">
-            <Link href={`/requests/${req.id}`} className="text-blue-600 font-semibold">
+      {/* Requests List */}
+      <ul>
+        {requests.map((req) => (
+          <li
+            key={req.id}
+            className="border rounded p-4 mb-2 flex justify-between items-center"
+          >
+            <a href={`/requests/${req.id}`} className="font-bold text-blue-600 hover:underline">
               {req.title}
-            </Link>
-            <p>{req.description}</p>
-            <p><strong>Business:</strong> {req.business}</p>
-            <p><strong>Priority:</strong> {req.priority}</p>
-            <p><strong>Submitted by:</strong> {req.submitter_name} ({req.submitter_email})</p>
+            </a>
+            <span className="text-sm text-gray-600">{req.business} – {req.priority}</span>
           </li>
         ))}
       </ul>
-
-      <div className="mt-6">
-        <Link href="/requests/completed" className="text-blue-500 underline">
-          View Completed Requests →
-        </Link>
-      </div>
     </div>
   );
 }

@@ -4,120 +4,74 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 
-type Priority = 'emergency' | 'urgent' | 'non_critical' | 'routine';
-
 export default function NewRequestPage() {
   const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState('routine');
   const [business, setBusiness] = useState('Infuserve America');
-  const [priority, setPriority] = useState<Priority>('routine');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
+    setLoading(true);
     setError(null);
 
-    try {
-      const { error: insertErr } = await supabase.from('work_orders').insert({
+    const { error } = await supabase.from('work_orders').insert([
+      {
         title,
         description,
-        business,                  // requires a TEXT "business" column in work_orders
-        priority,                  // enum: 'emergency' | 'urgent' | 'non_critical' | 'routine'
-        status: 'open',            // assumes status enum includes 'open'
-      });
+        priority,
+        business,
+        status: 'open', // default status
+      },
+    ]);
 
-      if (insertErr) throw insertErr;
-      setDone(true);
-    } catch (err: any) {
-      setError(err.message ?? 'Something went wrong.');
-    } finally {
-      setSubmitting(false);
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
     }
-  }
 
-  if (done) {
-    return (
-      <main className="max-w-2xl mx-auto p-6">
-        <h1 className="text-2xl font-semibold mb-2">Request submitted ✅</h1>
-        <p className="mb-6">Thanks! Your work request has been recorded.</p>
-        <div className="flex gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
-            type="button"
-          >
-            Go to Home
-          </button>
-          <button
-            onClick={() => router.push('/requests/new')}
-            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-            type="button"
-          >
-            Submit Another
-          </button>
-        </div>
-      </main>
-    );
-  }
+    router.push('/requests');
+  };
 
   return (
-    <main className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">New Work Request</h1>
-
-      {error && (
-        <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-5">
+    <div className="max-w-2xl mx-auto p-6 bg-white shadow-md rounded-md">
+      <h1 className="text-2xl font-bold mb-4">New Work Order</h1>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Title */}
         <div>
-          <label className="mb-1 block text-sm font-medium">Title *</label>
+          <label className="block font-medium">Title</label>
           <input
-            className="w-full rounded border p-2"
+            type="text"
+            className="w-full border rounded px-3 py-2"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            placeholder="Short summary"
           />
         </div>
 
+        {/* Description */}
         <div>
-          <label className="mb-1 block text-sm font-medium">Description</label>
+          <label className="block font-medium">Description</label>
           <textarea
-            className="w-full rounded border p-2 min-h-[120px]"
+            className="w-full border rounded px-3 py-2"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What needs to be done?"
+            required
           />
         </div>
 
+        {/* Priority Dropdown */}
         <div>
-          <label className="mb-1 block text-sm font-medium">Business</label>
+          <label className="block font-medium">Priority</label>
           <select
-            className="w-full rounded border p-2"
-            value={business}
-            onChange={(e) => setBusiness(e.target.value)}
-          >
-            <option>Infuserve America</option>
-            <option>Pharmetric</option>
-            <option>issak</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm font-medium">Priority</label>
-          <select
-            className="w-full rounded border p-2"
+            className="w-full border rounded px-3 py-2"
             value={priority}
-            onChange={(e) => setPriority(e.target.value as Priority)}
+            onChange={(e) => setPriority(e.target.value)}
           >
-            {/* Labels are friendly; values match your enum */}
             <option value="emergency">Emergency</option>
             <option value="urgent">Urgent</option>
             <option value="non_critical">Non-Critical</option>
@@ -125,14 +79,32 @@ export default function NewRequestPage() {
           </select>
         </div>
 
+        {/* Business Dropdown */}
+        <div>
+          <label className="block font-medium">Business</label>
+          <select
+            className="w-full border rounded px-3 py-2"
+            value={business}
+            onChange={(e) => setBusiness(e.target.value)}
+          >
+            <option value="Infuserve America">Infuserve America</option>
+            <option value="Pharmetric">Pharmetric</option>
+            <option value="Issak">Issak</option>
+          </select>
+        </div>
+
+        {/* Submit Button */}
         <button
-          className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           type="submit"
-          disabled={submitting}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+          disabled={loading}
         >
-          {submitting ? 'Submitting…' : 'Submit Request'}
+          {loading ? 'Submitting...' : 'Submit Request'}
         </button>
+
+        {/* Error Message */}
+        {error && <p className="text-red-600 mt-2">{error}</p>}
       </form>
-    </main>
+    </div>
   );
 }

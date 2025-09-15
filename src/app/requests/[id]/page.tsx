@@ -2,145 +2,146 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { getSupabase } from '../../../lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 
 type WO = {
-  id: string;
+  id: number;
   title: string;
-  details?: string | null;
   description?: string | null;
-  priority?: 'emergency' | 'urgent' | 'non_critical' | 'routine' | string;
-  status?: 'open' | 'in_progress' | 'completed' | string;
-  created_at?: string;
-  location?: string | null;
-  requested_by_name?: string | null;
+  status: 'open' | 'in_progress' | 'completed';
+  priority?: 'emergency' | 'urgent' | 'non_critical' | 'routine' | null;
   business?: string | null;
-  note?: string | null; // if you store a completion note on the row
+  completion_note?: string | null; // make sure this column exists
 };
 
-export default function RequestDetailsPage() {
-  const { id } = useParams<{ id: string }>();
+export default function WorkOrderDetail() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const [wo, setWo] = useState<WO | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [completing, setCompleting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
 
   useEffect(() => {
     (async () => {
-      const supabase = getSupabase();
+      setLoading(true);
+      setErr(null);
+      const id = Number(params.id);
       const { data, error } = await supabase
         .from('work_orders')
-        .select('id, title, details, description, priority, status, created_at, location, requested_by_name, business, note')
+        .select('id, title, description, status, priority, business, completion_note')
         .eq('id', id)
         .single();
-
       if (error) setErr(error.message);
-      else setWo(data as WO);
+      else {
+        setWo(data);
+        setNote(data?.completion_note ?? '');
+      }
       setLoading(false);
     })();
-  }, [id]);
+  }, [params.id]);
 
   async function markComplete() {
     if (!wo) return;
-    if (!confirm('Mark this work order as completed?')) return;
-
-    setCompleting(true);
-    const supabase = getSupabase();
-    const updates: Partial<WO> = { status: 'completed' };
-    if (note.trim()) (updates as any).note = note.trim();
-
+    setSaving(true);
+    setErr(null);
     const { error } = await supabase
       .from('work_orders')
-      .update(updates)
+      .update({ status: 'completed', completion_note: note })
       .eq('id', wo.id);
-
-    setCompleting(false);
-
+    setSaving(false);
     if (error) {
-      alert('Failed to complete: ' + error.message);
+      setErr(error.message);
       return;
     }
-    // Refresh view
-    setWo({ ...wo, ...updates });
+    router.replace('/requests/completed');
   }
 
-  async function deleteCompleted() {
+  async function deleteRequest() {
     if (!wo) return;
-    const confirmMsg = 'Delete this completed work order? This cannot be undone.';
-    if (!confirm(confirmMsg)) return;
-
-    setDeleting(true);
-    const supabase = getSupabase();
+    if (!confirm('Delete this completed work order?')) return;
+    setSaving(true);
+    setErr(null);
     const { error } = await supabase.from('work_orders').delete().eq('id', wo.id);
-    setDeleting(false);
-
+    setSaving(false);
     if (error) {
-      alert('Delete failed: ' + error.message);
+      setErr(error.message);
       return;
     }
-    router.push('/requests/completed');
+    router.replace('/requests/completed');
   }
 
-  if (loading) return <div className="p-6">Loading…</div>;
-  if (err) return <div className="p-6 text-red-600">Error: {err}</div>;
-  if (!wo) return <div className="p-6">Not found.</div>;
+  if (loading) return <main className="max-w-3xl mx-auto p-6">Loading…</main>;
+  if (err) {
+    return (
+      <main className="max-w-3xl mx-auto p-6">
+        <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          {err}
+        </div>
+      </main>
+    );
+  }
+  if (!wo) return null;
+
+  const isCompleted = wo.status === 'completed';
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Work Order</h1>
-        <div className="space-x-2">
-          <Link href="/requests" className="px-3 py-2 border rounded hover:bg-gray-50">Back to Requests</Link>
-          <Link href="/requests/completed" className="px-3 py-2 border rounded hover:bg-gray-50">Completed</Link>
-        </div>
+    <main className="max-w-3xl mx-auto p-6 space-y-4">
+      <h1 className="text-2xl font-semibold">{wo.title}</h1>
+      <div className="text-sm text-gray-600">
+        Status: <span className="font-medium">{wo.status}</span> · Priority:{' '}
+        <span className="font-medium">{wo.priority ?? '—'}</span> · Business:{' '}
+        <span className="font-medium">{wo.business ?? '—'}</span>
       </div>
 
-      <div className="grid gap-3 text-sm">
-        <div><span className="font-medium">Title:</span> {wo.title}</div>
-        <div><span className="font-medium">Business:</span> {wo.business ?? '-'}</div>
-        <div><span className="font-medium">Priority:</span> {(wo.priority ?? '').replace('_', ' ')}</div>
-        <div><span className="font-medium">Status:</span> {wo.status}</div>
-        <div><span className="font-medium">Location:</span> {wo.location ?? '-'}</div>
-        <div><span className="font-medium">Requested By:</span> {wo.requested_by_name ?? '-'}</div>
-        <div><span className="font-medium">Created:</span> {wo.created_at ? new Date(wo.created_at).toLocaleString() : '-'}</div>
-        <div><span className="font-medium">Description:</span> {wo.description ?? wo.details ?? '-'}</div>
-        {wo.note ? (
-          <div><span className="font-medium">Note:</span> {wo.note}</div>
-        ) : null}
-      </div>
+      {wo.description && (
+        <section>
+          <h2 className="text-lg font-medium mb-1">Description</h2>
+          <p className="whitespace-pre-wrap">{wo.description}</p>
+        </section>
+      )}
 
-      {wo.status !== 'completed' ? (
-        <div className="space-y-3">
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a completion note (optional)…"
-            className="w-full border rounded p-2"
-            rows={3}
-          />
+      <section>
+        <h2 className="text-lg font-medium mb-1">Completion Note</h2>
+        <textarea
+          className="w-full min-h-[120px] rounded border p-2"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Add any notes for completion…"
+        />
+      </section>
+
+      <div className="flex items-center gap-3">
+        {!isCompleted && (
           <button
             onClick={markComplete}
-            disabled={completing}
-            className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
+            disabled={saving}
+            className="rounded bg-green-600 text-white px-4 py-2 hover:bg-green-700 disabled:opacity-60"
           >
-            {completing ? 'Completing…' : 'Mark as Completed'}
+            {saving ? 'Saving…' : 'Mark Complete'}
           </button>
-        </div>
-      ) : (
-        <div className="space-x-2">
-          <button
-            onClick={deleteCompleted}
-            disabled={deleting}
-            className="px-4 py-2 rounded border text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            {deleting ? 'Deleting…' : 'Delete (Completed)'}
-          </button>
-        </div>
-      )}
-    </div>
+        )}
+        {isCompleted && (
+          <>
+            <button
+              onClick={markComplete}
+              disabled={saving}
+              className="rounded border px-4 py-2 hover:bg-gray-50 disabled:opacity-60"
+              title="Update note"
+            >
+              {saving ? 'Saving…' : 'Update Note'}
+            </button>
+            <button
+              onClick={deleteRequest}
+              disabled={saving}
+              className="rounded bg-red-600 text-white px-4 py-2 hover:bg-red-700 disabled:opacity-60"
+            >
+              Delete
+            </button>
+          </>
+        )}
+      </div>
+    </main>
   );
 }

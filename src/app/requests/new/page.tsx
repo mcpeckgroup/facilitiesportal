@@ -10,65 +10,89 @@ export default function NewRequestPage() {
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('routine');
   const [business, setBusiness] = useState('Infuserve America');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [files, setFiles] = useState<FileList | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
 
-    const { error } = await supabase.from('work_orders').insert([
-      {
-        title,
-        description,
-        priority,
-        business,
-        status: 'open', // default status
-      },
-    ]);
+    let uploadedUrls: string[] = [];
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
+    if (files) {
+      for (const file of Array.from(files)) {
+        const { data, error } = await supabase.storage
+          .from('attachments')
+          .upload(`${Date.now()}-${file.name}`, file);
+
+        if (!error && data?.path) {
+          const { data: urlData } = supabase.storage
+            .from('attachments')
+            .getPublicUrl(data.path);
+
+          if (urlData?.publicUrl) {
+            uploadedUrls.push(urlData.publicUrl);
+          }
+        }
+      }
     }
 
-    router.push('/requests');
+    const { error } = await supabase.from('work_orders').insert({
+      title,
+      description,
+      priority,
+      business,
+      status: 'open',
+      attachments: uploadedUrls,
+    });
+
+    if (!error) {
+      router.push('/requests');
+    } else {
+      alert('Error submitting request: ' + error.message);
+    }
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 bg-white shadow-md rounded-md">
+    <div className="max-w-xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-4">New Work Order</h1>
+
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Title */}
         <div>
-          <label className="block font-medium">Title</label>
+          <label className="block">Title</label>
           <input
-            type="text"
-            className="w-full border rounded px-3 py-2"
+            className="border rounded w-full px-2 py-1"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
           />
         </div>
 
-        {/* Description */}
         <div>
-          <label className="block font-medium">Description</label>
+          <label className="block">Description</label>
           <textarea
-            className="w-full border rounded px-3 py-2"
+            className="border rounded w-full px-2 py-1"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
           />
         </div>
 
-        {/* Priority Dropdown */}
         <div>
-          <label className="block font-medium">Priority</label>
+          <label className="block">Business</label>
           <select
-            className="w-full border rounded px-3 py-2"
+            className="border rounded px-2 py-1 w-full"
+            value={business}
+            onChange={(e) => setBusiness(e.target.value)}
+          >
+            <option>Infuserve America</option>
+            <option>Pharmetric</option>
+            <option>Issak</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block">Priority</label>
+          <select
+            className="border rounded px-2 py-1 w-full"
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
           >
@@ -79,31 +103,21 @@ export default function NewRequestPage() {
           </select>
         </div>
 
-        {/* Business Dropdown */}
         <div>
-          <label className="block font-medium">Business</label>
-          <select
-            className="w-full border rounded px-3 py-2"
-            value={business}
-            onChange={(e) => setBusiness(e.target.value)}
-          >
-            <option value="Infuserve America">Infuserve America</option>
-            <option value="Pharmetric">Pharmetric</option>
-            <option value="Issak">Issak</option>
-          </select>
+          <label className="block">Attachments</label>
+          <input
+            type="file"
+            multiple
+            onChange={(e) => setFiles(e.target.files)}
+          />
         </div>
 
-        {/* Submit Button */}
         <button
           type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-          disabled={loading}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
         >
-          {loading ? 'Submitting...' : 'Submit Request'}
+          Submit
         </button>
-
-        {/* Error Message */}
-        {error && <p className="text-red-600 mt-2">{error}</p>}
       </form>
     </div>
   );

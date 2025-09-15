@@ -1,101 +1,116 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 
 export default function NewRequestPage() {
-  const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('routine');
-  const [business, setBusiness] = useState('Infuserve America');
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [business, setBusiness] = useState('');
+  const [priority, setPriority] = useState('');
+  const [submitterName, setSubmitterName] = useState('');
+  const [submitterEmail, setSubmitterEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setLoading(true);
 
-    let uploadedUrls: string[] = [];
+    const { error } = await supabase.from('work_orders').insert([
+      {
+        title,
+        description,
+        business,
+        priority,
+        submitter_name: submitterName,
+        submitter_email: submitterEmail,
+        status: 'open',
+      },
+    ]);
 
-    if (files) {
-      for (const file of Array.from(files)) {
-        const { data, error } = await supabase.storage
-          .from('attachments')
-          .upload(`${Date.now()}-${file.name}`, file);
+    setLoading(false);
 
-        if (!error && data?.path) {
-          const { data: urlData } = supabase.storage
-            .from('attachments')
-            .getPublicUrl(data.path);
-
-          if (urlData?.publicUrl) {
-            uploadedUrls.push(urlData.publicUrl);
-          }
-        }
-      }
-    }
-
-    const { error } = await supabase.from('work_orders').insert({
-      title,
-      description,
-      priority,
-      business,
-      status: 'open',
-      attachments: uploadedUrls,
-    });
-
-    if (!error) {
-      router.push('/requests');
-    } else {
+    if (error) {
       alert('Error submitting request: ' + error.message);
+    } else {
+      router.push('/requests');
     }
-  };
+  }
 
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">New Work Order</h1>
+    <div className="p-6 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6">Submit a New Work Request</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block">Title</label>
+          <label className="block font-medium">Your Name</label>
           <input
-            className="border rounded w-full px-2 py-1"
+            type="text"
+            value={submitterName}
+            onChange={(e) => setSubmitterName(e.target.value)}
+            required
+            className="border p-2 rounded w-full"
+          />
+        </div>
+
+        <div>
+          <label className="block font-medium">Your Email</label>
+          <input
+            type="email"
+            value={submitterEmail}
+            onChange={(e) => setSubmitterEmail(e.target.value)}
+            required
+            className="border p-2 rounded w-full"
+          />
+        </div>
+
+        <div>
+          <label className="block font-medium">Title</label>
+          <input
+            type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
+            className="border p-2 rounded w-full"
           />
         </div>
 
         <div>
-          <label className="block">Description</label>
+          <label className="block font-medium">Description</label>
           <textarea
-            className="border rounded w-full px-2 py-1"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
+            className="border p-2 rounded w-full"
           />
         </div>
 
         <div>
-          <label className="block">Business</label>
+          <label className="block font-medium">Business</label>
           <select
-            className="border rounded px-2 py-1 w-full"
             value={business}
             onChange={(e) => setBusiness(e.target.value)}
+            required
+            className="border p-2 rounded w-full"
           >
-            <option>Infuserve America</option>
-            <option>Pharmetric</option>
-            <option>Issak</option>
+            <option value="">Select Business</option>
+            <option value="Infuserve America">Infuserve America</option>
+            <option value="Pharmetric">Pharmetric</option>
+            <option value="Issak">Issak</option>
           </select>
         </div>
 
         <div>
-          <label className="block">Priority</label>
+          <label className="block font-medium">Priority</label>
           <select
-            className="border rounded px-2 py-1 w-full"
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
+            required
+            className="border p-2 rounded w-full"
           >
+            <option value="">Select Priority</option>
             <option value="emergency">Emergency</option>
             <option value="urgent">Urgent</option>
             <option value="non_critical">Non-Critical</option>
@@ -103,20 +118,12 @@ export default function NewRequestPage() {
           </select>
         </div>
 
-        <div>
-          <label className="block">Attachments</label>
-          <input
-            type="file"
-            multiple
-            onChange={(e) => setFiles(e.target.files)}
-          />
-        </div>
-
         <button
           type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          disabled={loading}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
         >
-          Submit
+          {loading ? 'Submitting...' : 'Submit Request'}
         </button>
       </form>
     </div>

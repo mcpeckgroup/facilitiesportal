@@ -7,56 +7,90 @@ import { supabase } from "@/lib/supabase/client";
 type WorkOrder = {
   id: string;
   title: string;
-  description: string;
+  business?: string;
+  priority?: string;
   status: string;
-  priority: string;
-  business: string;
-  submitter_name: string;
-  submitter_email: string;
+  submitter_name?: string;
+  submitter_email?: string;
 };
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<WorkOrder[]>([]);
+  const [businessFilter, setBusinessFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
 
   useEffect(() => {
     async function fetchRequests() {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("work_orders")
         .select("*")
-        .eq("status", "open")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching requests:", error);
-      } else {
-        setRequests(data || []);
-      }
+        .neq("status", "completed");
+      if (data) setRequests(data);
     }
     fetchRequests();
   }, []);
 
+  const filtered = requests.filter((req) => {
+    return (
+      (businessFilter === "all" || req.business === businessFilter) &&
+      (priorityFilter === "all" || req.priority === priorityFilter)
+    );
+  });
+
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Open Requests</h1>
-
-      <div className="mb-4 space-x-4">
-        <Link href="/requests" className="px-3 py-2 bg-blue-500 text-white rounded">
-          Open Requests
+      {/* Tabs */}
+      <div className="flex gap-4 mb-6">
+        <Link href="/requests">
+          <span className="px-4 py-2 bg-blue-600 text-white rounded">
+            Open Requests
+          </span>
         </Link>
-        <Link href="/requests/completed" className="px-3 py-2 bg-gray-500 text-white rounded">
-          Completed Requests
+        <Link href="/requests/completed">
+          <span className="px-4 py-2 bg-gray-200 text-black rounded">
+            Completed Requests
+          </span>
         </Link>
       </div>
 
-      <ul className="space-y-3">
-        {requests.map((req) => (
-          <li key={req.id} className="border rounded p-3">
-            <Link href={`/requests/${req.id}`} className="font-semibold text-blue-600">
-              {req.title}
+      {/* Filters */}
+      <div className="flex gap-4 mb-4">
+        <select
+          value={businessFilter}
+          onChange={(e) => setBusinessFilter(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="all">All Businesses</option>
+          <option value="Infuserve America">Infuserve America</option>
+          <option value="Pharmetric">Pharmetric</option>
+          <option value="Issak">Issak</option>
+        </select>
+
+        <select
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="all">All Priorities</option>
+          <option value="emergency">Emergency</option>
+          <option value="urgent">Urgent</option>
+          <option value="non_critical">Non-Critical</option>
+          <option value="routine">Routine</option>
+        </select>
+      </div>
+
+      {/* Request List */}
+      <ul className="space-y-2">
+        {filtered.map((req) => (
+          <li key={req.id}>
+            <Link href={`/requests/${req.id}`}>
+              <span className="block p-3 bg-white rounded shadow hover:bg-gray-100 cursor-pointer">
+                <strong>{req.title}</strong> – {req.business} – {req.priority}
+                <div className="text-sm text-gray-600">
+                  Submitted by: {req.submitter_name} ({req.submitter_email})
+                </div>
+              </span>
             </Link>
-            <p>{req.description}</p>
-            <p className="text-sm text-gray-600">Priority: {req.priority}</p>
-            <p className="text-sm text-gray-600">Business: {req.business}</p>
           </li>
         ))}
       </ul>

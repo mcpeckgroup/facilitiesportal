@@ -4,84 +4,76 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 
+interface WorkOrder {
+  id: string;
+  title: string;
+  description: string;
+  business: string;
+  priority: string;
+  status: string;
+  created_at: string;
+}
+
 export default function RequestsPage() {
-  const [requests, setRequests] = useState<any[]>([]);
+  const [requests, setRequests] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [businessFilter, setBusinessFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
 
   useEffect(() => {
-    const fetchRequests = async () => {
-      setLoading(true);
+    async function fetchRequests() {
+      const { data, error } = await supabase
+        .from('work_orders')
+        .select('*')
+        .neq('status', 'completed')
+        .order('created_at', { ascending: false });
 
-      let query = supabase.from('work_orders').select('*').eq('status', 'open');
-
-      if (businessFilter !== 'all') {
-        query = query.eq('business', businessFilter);
+      if (error) {
+        console.error('Error fetching requests:', error);
+      } else {
+        setRequests(data || []);
       }
-      if (priorityFilter !== 'all') {
-        query = query.eq('priority', priorityFilter);
-      }
-
-      const { data, error } = await query.order('id', { ascending: false });
-
-      if (!error) setRequests(data || []);
       setLoading(false);
-    };
+    }
 
     fetchRequests();
-  }, [businessFilter, priorityFilter]);
+  }, []);
+
+  if (loading) {
+    return <p className="p-4">Loading requests...</p>;
+  }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Open Work Orders</h1>
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Open Requests</h1>
 
-      {/* Filters */}
-      <div className="flex space-x-4 mb-6">
-        <div>
-          <label className="block font-medium">Filter by Business</label>
-          <select
-            className="border rounded px-2 py-1"
-            value={businessFilter}
-            onChange={(e) => setBusinessFilter(e.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="Infuserve America">Infuserve America</option>
-            <option value="Pharmetric">Pharmetric</option>
-            <option value="Issak">Issak</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block font-medium">Filter by Priority</label>
-          <select
-            className="border rounded px-2 py-1"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="emergency">Emergency</option>
-            <option value="urgent">Urgent</option>
-            <option value="non_critical">Non-Critical</option>
-            <option value="routine">Routine</option>
-          </select>
-        </div>
+      {/* Navigation Tabs */}
+      <div className="mb-6 flex space-x-4">
+        <Link
+          href="/requests"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700"
+        >
+          Open Requests
+        </Link>
+        <Link
+          href="/requests/completed"
+          className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg shadow hover:bg-gray-300"
+        >
+          Completed Requests
+        </Link>
       </div>
 
-      {loading ? (
-        <p>Loading...</p>
-      ) : requests.length === 0 ? (
+      {requests.length === 0 ? (
         <p>No open requests found.</p>
       ) : (
-        <ul className="divide-y">
+        <ul className="space-y-4">
           {requests.map((req) => (
-            <li key={req.id} className="py-3">
-              <Link href={`/requests/${req.id}`} className="text-blue-600 hover:underline">
-                {req.title}
+            <li key={req.id} className="border p-4 rounded-lg shadow">
+              <Link href={`/requests/${req.id}`}>
+                <h2 className="text-xl font-semibold hover:underline">{req.title}</h2>
               </Link>
-              <div className="text-sm text-gray-500">
+              <p className="text-sm text-gray-600">
                 {req.business} • {req.priority}
-              </div>
+              </p>
+              <p className="mt-2 text-gray-700">{req.description}</p>
             </li>
           ))}
         </ul>

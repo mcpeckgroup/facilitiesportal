@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 
 export default function NewRequestPage() {
-  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [business, setBusiness] = useState('');
   const [priority, setPriority] = useState('');
@@ -20,7 +19,6 @@ export default function NewRequestPage() {
 
     const { error } = await supabase.from('work_orders').insert([
       {
-        title,
         description,
         business,
         priority,
@@ -61,17 +59,6 @@ export default function NewRequestPage() {
             type="email"
             value={submitterEmail}
             onChange={(e) => setSubmitterEmail(e.target.value)}
-            required
-            className="border p-2 rounded w-full"
-          />
-        </div>
-
-        <div>
-          <label className="block font-medium">Title</label>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
             required
             className="border p-2 rounded w-full"
           />

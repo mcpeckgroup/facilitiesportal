@@ -1,87 +1,82 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
+import Link from 'next/link';
+
+interface WorkOrder {
+  id: string;
+  title: string;
+  description: string;
+  priority: string;
+  business: string;
+  completion_note: string | null;
+}
 
 export default function CompletedRequestsPage() {
-  const [requests, setRequests] = useState<any[]>([]);
+  const [requests, setRequests] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [businessFilter, setBusinessFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState('all');
 
   useEffect(() => {
     const fetchRequests = async () => {
-      setLoading(true);
+      const { data, error } = await supabase
+        .from('work_orders')
+        .select('*')
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
 
-      let query = supabase.from('work_orders').select('*').eq('status', 'completed');
-
-      if (businessFilter !== 'all') {
-        query = query.eq('business', businessFilter);
+      if (error) {
+        console.error('Error fetching completed requests:', error);
+      } else {
+        setRequests(data || []);
       }
-      if (priorityFilter !== 'all') {
-        query = query.eq('priority', priorityFilter);
-      }
-
-      const { data, error } = await query.order('id', { ascending: false });
-
-      if (!error) setRequests(data || []);
       setLoading(false);
     };
 
     fetchRequests();
-  }, [businessFilter, priorityFilter]);
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this completed work order?')) return;
+
+    const { error } = await supabase.from('work_orders').delete().eq('id', id);
+
+    if (error) {
+      console.error('Error deleting request:', error);
+      alert('Failed to delete request.');
+    } else {
+      setRequests(requests.filter((req) => req.id !== id));
+    }
+  };
+
+  if (loading) return <p>Loading completed requests...</p>;
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Completed Work Orders</h1>
-
-      {/* Filters */}
-      <div className="flex space-x-4 mb-6">
-        <div>
-          <label className="block font-medium">Filter by Business</label>
-          <select
-            className="border rounded px-2 py-1"
-            value={businessFilter}
-            onChange={(e) => setBusinessFilter(e.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="Infuserve America">Infuserve America</option>
-            <option value="Pharmetric">Pharmetric</option>
-            <option value="Issak">Issak</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block font-medium">Filter by Priority</label>
-          <select
-            className="border rounded px-2 py-1"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="emergency">Emergency</option>
-            <option value="urgent">Urgent</option>
-            <option value="non_critical">Non-Critical</option>
-            <option value="routine">Routine</option>
-          </select>
-        </div>
-      </div>
-
-      {loading ? (
-        <p>Loading...</p>
-      ) : requests.length === 0 ? (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-6">Completed Requests</h1>
+      {requests.length === 0 ? (
         <p>No completed requests found.</p>
       ) : (
-        <ul className="divide-y">
+        <ul className="space-y-4">
           {requests.map((req) => (
-            <li key={req.id} className="py-3">
-              <Link href={`/requests/${req.id}`} className="text-blue-600 hover:underline">
-                {req.title}
-              </Link>
-              <div className="text-sm text-gray-500">
-                {req.business} • {req.priority}
-              </div>
+            <li key={req.id} className="border rounded p-4 shadow bg-gray-50">
+              <h2 className="text-lg font-semibold">
+                <Link href={`/requests/${req.id}`}>{req.title}</Link>
+              </h2>
+              <p className="text-sm text-gray-600">{req.description}</p>
+              <p className="text-sm"><strong>Business:</strong> {req.business}</p>
+              <p className="text-sm"><strong>Priority:</strong> {req.priority}</p>
+              {req.completion_note && (
+                <p className="text-sm text-green-700">
+                  <strong>Completion Note:</strong> {req.completion_note}
+                </p>
+              )}
+              <button
+                onClick={() => handleDelete(req.id)}
+                className="mt-3 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+              >
+                Delete
+              </button>
             </li>
           ))}
         </ul>

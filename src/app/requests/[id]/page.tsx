@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
+import Link from 'next/link';
 
 interface WorkOrder {
   id: string;
@@ -11,32 +12,27 @@ interface WorkOrder {
   priority: string;
   business: string;
   status: string;
-  completion_note?: string | null;
-  created_at: string;
+  completion_note: string | null;
 }
 
 export default function RequestDetailPage() {
-  const params = useParams();
+  const { id } = useParams();
   const router = useRouter();
   const [request, setRequest] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
-  const [completionNote, setCompletionNote] = useState('');
-
-  // ✅ Make sure we always treat the ID as a string (not NaN!)
-  const requestId = params?.id as string;
 
   useEffect(() => {
-    if (!requestId) return;
+    if (!id) return;
 
     const fetchRequest = async () => {
       const { data, error } = await supabase
         .from('work_orders')
         .select('*')
-        .eq('id', requestId) // use string UUID directly
+        .eq('id', id)
         .single();
 
       if (error) {
-        console.error('Error fetching request:', error.message);
+        console.error('Error fetching request:', error);
       } else {
         setRequest(data);
       }
@@ -44,56 +40,79 @@ export default function RequestDetailPage() {
     };
 
     fetchRequest();
-  }, [requestId]);
+  }, [id]);
 
-  const markAsComplete = async () => {
-    if (!requestId) return;
+  const handleMarkComplete = async () => {
+    if (!id) return;
 
     const { error } = await supabase
       .from('work_orders')
-      .update({
-        status: 'completed',
-        completion_note: completionNote || null, // safe update
-      })
-      .eq('id', requestId);
+      .update({ status: 'completed' })
+      .eq('id', id);
 
     if (error) {
-      console.error('Error marking complete:', error.message);
+      console.error('Error marking request complete:', error);
+      alert('Failed to mark as complete.');
     } else {
+      alert('Request marked as complete.');
       router.push('/requests/completed');
     }
   };
 
-  if (loading) return <p>Loading...</p>;
+  const handleDelete = async () => {
+    if (!id) return;
+    if (!confirm('Are you sure you want to delete this work order?')) return;
+
+    const { error } = await supabase.from('work_orders').delete().eq('id', id);
+
+    if (error) {
+      console.error('Error deleting request:', error);
+      alert('Failed to delete request.');
+    } else {
+      alert('Work order deleted.');
+      router.push('/requests/completed');
+    }
+  };
+
+  if (loading) return <p>Loading request details...</p>;
   if (!request) return <p>Request not found.</p>;
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
+    <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">{request.title}</h1>
       <p className="mb-2"><strong>Description:</strong> {request.description}</p>
-      <p className="mb-2"><strong>Priority:</strong> {request.priority}</p>
       <p className="mb-2"><strong>Business:</strong> {request.business}</p>
+      <p className="mb-2"><strong>Priority:</strong> {request.priority}</p>
       <p className="mb-2"><strong>Status:</strong> {request.status}</p>
-      <p className="mb-4"><strong>Created At:</strong> {new Date(request.created_at).toLocaleString()}</p>
-
-      {request.status !== 'completed' ? (
-        <div className="mt-6">
-          <textarea
-            placeholder="Completion note"
-            value={completionNote}
-            onChange={(e) => setCompletionNote(e.target.value)}
-            className="border p-2 w-full rounded mb-2"
-          />
-          <button
-            onClick={markAsComplete}
-            className="bg-green-600 text-white px-4 py-2 rounded"
-          >
-            Mark as Complete
-          </button>
-        </div>
-      ) : (
-        <p><strong>Completion Note:</strong> {request.completion_note || 'None'}</p>
+      {request.completion_note && (
+        <p className="mb-2 text-green-700">
+          <strong>Completion Note:</strong> {request.completion_note}
+        </p>
       )}
+
+      <div className="flex space-x-4 mt-4">
+        {request.status !== 'completed' && (
+          <button
+            onClick={handleMarkComplete}
+            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+          >
+            Mark Complete
+          </button>
+        )}
+
+        {request.status === 'completed' && (
+          <button
+            onClick={handleDelete}
+            className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+          >
+            Delete
+          </button>
+        )}
+
+        <Link href="/requests" className="text-blue-500 hover:underline">
+          Back to Requests
+        </Link>
+      </div>
     </div>
   );
 }

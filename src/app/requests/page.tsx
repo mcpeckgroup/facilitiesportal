@@ -17,6 +17,8 @@ interface WorkOrder {
 export default function RequestsPage() {
   const [requests, setRequests] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [businessFilter, setBusinessFilter] = useState<string>('all');
+  const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
   useEffect(() => {
     async function fetchRequests() {
@@ -36,6 +38,13 @@ export default function RequestsPage() {
 
     fetchRequests();
   }, []);
+
+  // Apply filters
+  const filteredRequests = requests.filter((req) => {
+    const businessMatch = businessFilter === 'all' || req.business === businessFilter;
+    const priorityMatch = priorityFilter === 'all' || req.priority === priorityFilter;
+    return businessMatch && priorityMatch;
+  });
 
   if (loading) {
     return <p className="p-4">Loading requests...</p>;
@@ -61,11 +70,37 @@ export default function RequestsPage() {
         </Link>
       </div>
 
-      {requests.length === 0 ? (
+      {/* Filters */}
+      <div className="mb-6 flex space-x-4">
+        <select
+          value={businessFilter}
+          onChange={(e) => setBusinessFilter(e.target.value)}
+          className="border p-2 rounded-lg"
+        >
+          <option value="all">All Businesses</option>
+          <option value="Infuserve America">Infuserve America</option>
+          <option value="Pharmetric">Pharmetric</option>
+          <option value="Issak">Issak</option>
+        </select>
+
+        <select
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value)}
+          className="border p-2 rounded-lg"
+        >
+          <option value="all">All Priorities</option>
+          <option value="emergency">Emergency</option>
+          <option value="urgent">Urgent</option>
+          <option value="non_critical">Non-Critical</option>
+          <option value="routine">Routine</option>
+        </select>
+      </div>
+
+      {filteredRequests.length === 0 ? (
         <p>No open requests found.</p>
       ) : (
         <ul className="space-y-4">
-          {requests.map((req) => (
+          {filteredRequests.map((req) => (
             <li key={req.id} className="border p-4 rounded-lg shadow">
               <Link href={`/requests/${req.id}`}>
                 <h2 className="text-xl font-semibold hover:underline">{req.title}</h2>

@@ -22,6 +22,8 @@ export default function RequestDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [request, setRequest] = useState<WorkOrder | null>(null);
+  const [completionNote, setCompletionNote] = useState("");
+  const [showCompletionForm, setShowCompletionForm] = useState(false);
 
   useEffect(() => {
     async function fetchRequest() {
@@ -43,11 +45,17 @@ export default function RequestDetailPage() {
 
   async function markComplete() {
     if (!request) return;
+    if (!completionNote.trim()) {
+      alert("Please enter a completion note before completing.");
+      return;
+    }
+
     const { error } = await supabase
       .from("work_orders")
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
+        completion_note: completionNote,
       })
       .eq("id", request.id);
 
@@ -57,50 +65,95 @@ export default function RequestDetailPage() {
 
   if (!request) return <p>Loading...</p>;
 
-  return (
-    <div style={{ padding: "20px" }}>
-      <h1>{request.title}</h1>
-      <p>{request.description}</p>
+  const blockStyle: React.CSSProperties = {
+    border: "1px solid #ddd",
+    borderRadius: "8px",
+    padding: "15px",
+    marginBottom: "15px",
+    background: "#fafafa",
+  };
 
-      <p>
+  return (
+    <div style={{ padding: "20px", maxWidth: "700px", margin: "auto" }}>
+      <h1 style={{ marginBottom: "20px" }}>Work Order Details</h1>
+
+      <div style={blockStyle}>
+        <strong>Title:</strong>
+        <p>{request.title}</p>
+      </div>
+
+      <div style={blockStyle}>
+        <strong>Description:</strong>
+        <p>{request.description}</p>
+      </div>
+
+      <div style={blockStyle}>
         <strong>Business:</strong> {request.business}
-      </p>
-      <p>
+      </div>
+
+      <div style={blockStyle}>
         <strong>Priority:</strong> {request.priority}
-      </p>
-      <p>
+      </div>
+
+      <div style={blockStyle}>
         <strong>Status:</strong> {request.status}
-      </p>
-      <p>
+      </div>
+
+      <div style={blockStyle}>
         <strong>Submitted by:</strong> {request.submitter_name} (
         {request.submitter_email})
-      </p>
-      <p>
+      </div>
+
+      <div style={blockStyle}>
         <strong>Submitted:</strong>{" "}
         {request.created_at
           ? new Date(request.created_at).toLocaleString()
           : "—"}
-      </p>
+      </div>
+
       {request.status === "completed" && (
         <>
-          <p>
+          <div style={blockStyle}>
             <strong>Completed:</strong>{" "}
             {request.completed_at
               ? new Date(request.completed_at).toLocaleString()
               : "—"}
-          </p>
+          </div>
           {request.completion_note && (
-            <p>
-              <strong>Completion Note:</strong> {request.completion_note}
-            </p>
+            <div style={blockStyle}>
+              <strong>Completion Note:</strong>
+              <p>{request.completion_note}</p>
+            </div>
           )}
         </>
       )}
 
       {request.status !== "completed" && (
-        <button onClick={markComplete} style={{ marginTop: "15px" }}>
-          Mark as Completed
-        </button>
+        <div style={blockStyle}>
+          {!showCompletionForm ? (
+            <button onClick={() => setShowCompletionForm(true)}>
+              Mark as Completed
+            </button>
+          ) : (
+            <>
+              <label>
+                <strong>Completion Note:</strong>
+              </label>
+              <textarea
+                value={completionNote}
+                onChange={(e) => setCompletionNote(e.target.value)}
+                rows={4}
+                style={{ width: "100%", marginTop: "10px" }}
+              />
+              <button
+                onClick={markComplete}
+                style={{ marginTop: "10px", display: "block" }}
+              >
+                Submit Completion
+              </button>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

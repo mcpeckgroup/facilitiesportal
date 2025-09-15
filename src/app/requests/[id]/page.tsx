@@ -7,89 +7,100 @@ import { supabase } from "@/lib/supabase/client";
 type WorkOrder = {
   id: string;
   title: string;
-  description?: string;
-  business?: string;
-  priority?: string;
+  description: string;
+  business: string;
+  priority: string;
   status: string;
-  completion_note?: string;
-  submitter_name?: string;
-  submitter_email?: string;
+  submitter_name: string;
+  submitter_email: string;
+  created_at: string;
+  completed_at: string;
+  completion_note: string;
 };
 
 export default function RequestDetailPage() {
-  const { id } = useParams();
+  const params = useParams();
   const router = useRouter();
   const [request, setRequest] = useState<WorkOrder | null>(null);
-  const [completionNote, setCompletionNote] = useState("");
 
   useEffect(() => {
     async function fetchRequest() {
-      const { data } = await supabase
+      if (!params?.id) return;
+      const { data, error } = await supabase
         .from("work_orders")
         .select("*")
-        .eq("id", id)
+        .eq("id", params.id)
         .single();
 
-      if (data) {
+      if (error) {
+        console.error("Error fetching request:", error);
+      } else {
         setRequest(data);
-        setCompletionNote(data.completion_note || "");
       }
     }
-    if (id) fetchRequest();
-  }, [id]);
+    fetchRequest();
+  }, [params?.id]);
 
-  const markCompleted = async () => {
-    if (!id) return;
-    await supabase
+  async function markComplete() {
+    if (!request) return;
+    const { error } = await supabase
       .from("work_orders")
-      .update({ status: "completed", completion_note: completionNote })
-      .eq("id", id);
-    router.push("/requests/completed");
-  };
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", request.id);
 
-  if (!request) {
-    return <div className="p-6">Loading...</div>;
+    if (error) console.error("Error marking complete:", error);
+    else router.push("/requests/completed");
   }
 
+  if (!request) return <p>Loading...</p>;
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">{request.title}</h1>
+    <div style={{ padding: "20px" }}>
+      <h1>{request.title}</h1>
+      <p>{request.description}</p>
 
-      {request.description && (
-        <p className="mb-2 text-gray-700">{request.description}</p>
-      )}
-
-      <p><strong>Business:</strong> {request.business}</p>
-      <p><strong>Priority:</strong> {request.priority}</p>
-      <p><strong>Status:</strong> {request.status}</p>
-
-      {/* Show submitter info */}
+      <p>
+        <strong>Business:</strong> {request.business}
+      </p>
+      <p>
+        <strong>Priority:</strong> {request.priority}
+      </p>
+      <p>
+        <strong>Status:</strong> {request.status}
+      </p>
       <p>
         <strong>Submitted by:</strong> {request.submitter_name} (
         {request.submitter_email})
       </p>
-
-      {request.status !== "completed" && (
-        <div className="mt-4">
-          <textarea
-            value={completionNote}
-            onChange={(e) => setCompletionNote(e.target.value)}
-            placeholder="Add completion notes..."
-            className="w-full border p-2 rounded"
-          />
-          <button
-            onClick={markCompleted}
-            className="mt-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-          >
-            Mark as Completed
-          </button>
-        </div>
+      <p>
+        <strong>Submitted:</strong>{" "}
+        {request.created_at
+          ? new Date(request.created_at).toLocaleString()
+          : "—"}
+      </p>
+      {request.status === "completed" && (
+        <>
+          <p>
+            <strong>Completed:</strong>{" "}
+            {request.completed_at
+              ? new Date(request.completed_at).toLocaleString()
+              : "—"}
+          </p>
+          {request.completion_note && (
+            <p>
+              <strong>Completion Note:</strong> {request.completion_note}
+            </p>
+          )}
+        </>
       )}
 
-      {request.status === "completed" && request.completion_note && (
-        <p className="mt-4 text-gray-700">
-          <strong>Completion Notes:</strong> {request.completion_note}
-        </p>
+      {request.status !== "completed" && (
+        <button onClick={markComplete} style={{ marginTop: "15px" }}>
+          Mark as Completed
+        </button>
       )}
     </div>
   );

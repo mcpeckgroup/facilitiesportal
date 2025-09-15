@@ -1,116 +1,115 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { supabase } from '../../../lib/supabase/client';
 
 export default function NewRequestPage() {
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [business, setBusiness] = useState('');
   const [priority, setPriority] = useState('');
   const [submitterName, setSubmitterName] = useState('');
   const [submitterEmail, setSubmitterEmail] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    setError(null);
 
     const { error } = await supabase.from('work_orders').insert([
       {
+        title,
         description,
         business,
         priority,
+        status: 'open',
         submitter_name: submitterName,
         submitter_email: submitterEmail,
-        status: 'open',
       },
     ]);
 
-    setLoading(false);
-
     if (error) {
-      alert('Error submitting request: ' + error.message);
+      console.error(error);
+      setError('Error submitting request: ' + error.message);
     } else {
       router.push('/requests');
     }
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Submit a New Work Request</h1>
+    <div className="p-6 max-w-lg mx-auto">
+      <h1 className="text-2xl font-bold mb-4">New Work Order</h1>
+
+      {error && <p className="text-red-600 mb-3">{error}</p>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block font-medium">Your Name</label>
-          <input
-            type="text"
-            value={submitterName}
-            onChange={(e) => setSubmitterName(e.target.value)}
-            required
-            className="border p-2 rounded w-full"
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="Title"
+          className="border w-full p-2"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
 
-        <div>
-          <label className="block font-medium">Your Email</label>
-          <input
-            type="email"
-            value={submitterEmail}
-            onChange={(e) => setSubmitterEmail(e.target.value)}
-            required
-            className="border p-2 rounded w-full"
-          />
-        </div>
+        <textarea
+          placeholder="Description"
+          className="border w-full p-2"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          required
+        />
 
-        <div>
-          <label className="block font-medium">Description</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            required
-            className="border p-2 rounded w-full"
-          />
-        </div>
+        <select
+          className="border w-full p-2"
+          value={business}
+          onChange={(e) => setBusiness(e.target.value)}
+          required
+        >
+          <option value="">Select Business</option>
+          <option value="Infuserve America">Infuserve America</option>
+          <option value="Pharmetric">Pharmetric</option>
+          <option value="Issak">Issak</option>
+        </select>
 
-        <div>
-          <label className="block font-medium">Business</label>
-          <select
-            value={business}
-            onChange={(e) => setBusiness(e.target.value)}
-            required
-            className="border p-2 rounded w-full"
-          >
-            <option value="">Select Business</option>
-            <option value="Infuserve America">Infuserve America</option>
-            <option value="Pharmetric">Pharmetric</option>
-            <option value="Issak">Issak</option>
-          </select>
-        </div>
+        <select
+          className="border w-full p-2"
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          required
+        >
+          <option value="">Select Priority</option>
+          <option value="emergency">Emergency</option>
+          <option value="urgent">Urgent</option>
+          <option value="non_critical">Non-Critical</option>
+          <option value="routine">Routine</option>
+        </select>
 
-        <div>
-          <label className="block font-medium">Priority</label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-            required
-            className="border p-2 rounded w-full"
-          >
-            <option value="">Select Priority</option>
-            <option value="emergency">Emergency</option>
-            <option value="urgent">Urgent</option>
-            <option value="non_critical">Non-Critical</option>
-            <option value="routine">Routine</option>
-          </select>
-        </div>
+        <input
+          type="text"
+          placeholder="Your Name"
+          className="border w-full p-2"
+          value={submitterName}
+          onChange={(e) => setSubmitterName(e.target.value)}
+          required
+        />
+
+        <input
+          type="email"
+          placeholder="Your Email"
+          className="border w-full p-2"
+          value={submitterEmail}
+          onChange={(e) => setSubmitterEmail(e.target.value)}
+          required
+        />
 
         <button
           type="submit"
-          disabled={loading}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          className="bg-blue-600 text-white px-4 py-2 rounded"
         >
-          {loading ? 'Submitting...' : 'Submit Request'}
+          Submit Request
         </button>
       </form>
     </div>

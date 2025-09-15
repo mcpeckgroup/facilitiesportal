@@ -2,25 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
-
-interface WorkOrder {
-  id: string;
-  title: string;
-  description: string;
-  business: string;
-  priority: string;
-  status: string;
-  completion_note: string | null;
-  created_at: string;
-}
+import { supabase } from '../../../lib/supabase/client';
 
 export default function RequestDetailPage() {
   const { id } = useParams();
   const router = useRouter();
-
-  const [request, setRequest] = useState<WorkOrder | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [request, setRequest] = useState<any>(null);
   const [completionNote, setCompletionNote] = useState('');
 
   useEffect(() => {
@@ -31,65 +18,47 @@ export default function RequestDetailPage() {
         .eq('id', id)
         .single();
 
-      if (error) {
-        console.error('Error fetching request:', error.message);
-      } else {
+      if (error) console.error(error);
+      else {
         setRequest(data);
-        setCompletionNote(data.completion_note || '');
+        setCompletionNote(data?.completion_note || '');
       }
-      setLoading(false);
     }
 
     fetchRequest();
   }, [id]);
 
-  async function handleMarkComplete() {
+  async function markComplete() {
     const { error } = await supabase
       .from('work_orders')
       .update({ status: 'completed', completion_note: completionNote })
       .eq('id', id);
 
-    if (error) {
-      alert('Error marking as complete: ' + error.message);
-    } else {
-      router.push('/requests/completed');
-    }
+    if (error) console.error(error);
+    else router.push('/requests/completed');
   }
 
-  if (loading) {
-    return <p className="p-4">Loading request...</p>;
-  }
-
-  if (!request) {
-    return <p className="p-4">Request not found.</p>;
-  }
+  if (!request) return <p className="p-6">Loading...</p>;
 
   return (
-    <div className="p-4 space-y-6">
-      <h1 className="text-2xl font-bold">{request.title}</h1>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-2">{request.title}</h1>
       <p>{request.description}</p>
-      <p>
-        <strong>Business:</strong> {request.business}
-      </p>
-      <p>
-        <strong>Priority:</strong> {request.priority}
-      </p>
-      <p>
-        <strong>Status:</strong> {request.status}
-      </p>
+      <p><strong>Business:</strong> {request.business}</p>
+      <p><strong>Priority:</strong> {request.priority}</p>
+      <p><strong>Submitted by:</strong> {request.submitter_name} ({request.submitter_email})</p>
 
       {request.status !== 'completed' && (
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold">Completion Note</h2>
+        <div className="mt-6">
           <textarea
+            className="border w-full p-2 mb-2"
             value={completionNote}
             onChange={(e) => setCompletionNote(e.target.value)}
-            className="w-full border p-2 rounded"
-            rows={4}
+            placeholder="Add completion note before closing"
           />
           <button
-            onClick={handleMarkComplete}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            onClick={markComplete}
+            className="bg-green-600 text-white px-4 py-2 rounded"
           >
             Mark as Completed
           </button>
@@ -97,10 +66,7 @@ export default function RequestDetailPage() {
       )}
 
       {request.status === 'completed' && (
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-green-700">Completion Note</h2>
-          <p>{request.completion_note}</p>
-        </div>
+        <p className="mt-4"><strong>Completion Note:</strong> {request.completion_note}</p>
       )}
     </div>
   );

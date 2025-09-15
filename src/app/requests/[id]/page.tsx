@@ -4,144 +4,96 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 
-type WO = {
-  id: number;
+interface WorkOrder {
+  id: string;
   title: string;
-  description?: string | null;
-  status: 'open' | 'in_progress' | 'completed';
-  priority?: 'emergency' | 'urgent' | 'non_critical' | 'routine' | null;
-  business?: string | null;
-  completion_note?: string | null; // make sure this column exists
-};
+  description: string;
+  priority: string;
+  business: string;
+  status: string;
+  completion_note?: string | null;
+  created_at: string;
+}
 
-export default function WorkOrderDetail() {
-  const params = useParams<{ id: string }>();
+export default function RequestDetailPage() {
+  const params = useParams();
   const router = useRouter();
-  const [wo, setWo] = useState<WO | null>(null);
+  const [request, setRequest] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState('');
+  const [completionNote, setCompletionNote] = useState('');
+
+  // ✅ Make sure we always treat the ID as a string (not NaN!)
+  const requestId = params?.id as string;
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      const id = Number(params.id);
+    if (!requestId) return;
+
+    const fetchRequest = async () => {
       const { data, error } = await supabase
         .from('work_orders')
-        .select('id, title, description, status, priority, business, completion_note')
-        .eq('id', id)
+        .select('*')
+        .eq('id', requestId) // use string UUID directly
         .single();
-      if (error) setErr(error.message);
-      else {
-        setWo(data);
-        setNote(data?.completion_note ?? '');
+
+      if (error) {
+        console.error('Error fetching request:', error.message);
+      } else {
+        setRequest(data);
       }
       setLoading(false);
-    })();
-  }, [params.id]);
+    };
 
-  async function markComplete() {
-    if (!wo) return;
-    setSaving(true);
-    setErr(null);
+    fetchRequest();
+  }, [requestId]);
+
+  const markAsComplete = async () => {
+    if (!requestId) return;
+
     const { error } = await supabase
       .from('work_orders')
-      .update({ status: 'completed', completion_note: note })
-      .eq('id', wo.id);
-    setSaving(false);
+      .update({
+        status: 'completed',
+        completion_note: completionNote || null, // safe update
+      })
+      .eq('id', requestId);
+
     if (error) {
-      setErr(error.message);
-      return;
+      console.error('Error marking complete:', error.message);
+    } else {
+      router.push('/requests/completed');
     }
-    router.replace('/requests/completed');
-  }
+  };
 
-  async function deleteRequest() {
-    if (!wo) return;
-    if (!confirm('Delete this completed work order?')) return;
-    setSaving(true);
-    setErr(null);
-    const { error } = await supabase.from('work_orders').delete().eq('id', wo.id);
-    setSaving(false);
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-    router.replace('/requests/completed');
-  }
-
-  if (loading) return <main className="max-w-3xl mx-auto p-6">Loading…</main>;
-  if (err) {
-    return (
-      <main className="max-w-3xl mx-auto p-6">
-        <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-          {err}
-        </div>
-      </main>
-    );
-  }
-  if (!wo) return null;
-
-  const isCompleted = wo.status === 'completed';
+  if (loading) return <p>Loading...</p>;
+  if (!request) return <p>Request not found.</p>;
 
   return (
-    <main className="max-w-3xl mx-auto p-6 space-y-4">
-      <h1 className="text-2xl font-semibold">{wo.title}</h1>
-      <div className="text-sm text-gray-600">
-        Status: <span className="font-medium">{wo.status}</span> · Priority:{' '}
-        <span className="font-medium">{wo.priority ?? '—'}</span> · Business:{' '}
-        <span className="font-medium">{wo.business ?? '—'}</span>
-      </div>
+    <div className="max-w-2xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">{request.title}</h1>
+      <p className="mb-2"><strong>Description:</strong> {request.description}</p>
+      <p className="mb-2"><strong>Priority:</strong> {request.priority}</p>
+      <p className="mb-2"><strong>Business:</strong> {request.business}</p>
+      <p className="mb-2"><strong>Status:</strong> {request.status}</p>
+      <p className="mb-4"><strong>Created At:</strong> {new Date(request.created_at).toLocaleString()}</p>
 
-      {wo.description && (
-        <section>
-          <h2 className="text-lg font-medium mb-1">Description</h2>
-          <p className="whitespace-pre-wrap">{wo.description}</p>
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-lg font-medium mb-1">Completion Note</h2>
-        <textarea
-          className="w-full min-h-[120px] rounded border p-2"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Add any notes for completion…"
-        />
-      </section>
-
-      <div className="flex items-center gap-3">
-        {!isCompleted && (
+      {request.status !== 'completed' ? (
+        <div className="mt-6">
+          <textarea
+            placeholder="Completion note"
+            value={completionNote}
+            onChange={(e) => setCompletionNote(e.target.value)}
+            className="border p-2 w-full rounded mb-2"
+          />
           <button
-            onClick={markComplete}
-            disabled={saving}
-            className="rounded bg-green-600 text-white px-4 py-2 hover:bg-green-700 disabled:opacity-60"
+            onClick={markAsComplete}
+            className="bg-green-600 text-white px-4 py-2 rounded"
           >
-            {saving ? 'Saving…' : 'Mark Complete'}
+            Mark as Complete
           </button>
-        )}
-        {isCompleted && (
-          <>
-            <button
-              onClick={markComplete}
-              disabled={saving}
-              className="rounded border px-4 py-2 hover:bg-gray-50 disabled:opacity-60"
-              title="Update note"
-            >
-              {saving ? 'Saving…' : 'Update Note'}
-            </button>
-            <button
-              onClick={deleteRequest}
-              disabled={saving}
-              className="rounded bg-red-600 text-white px-4 py-2 hover:bg-red-700 disabled:opacity-60"
-            >
-              Delete
-            </button>
-          </>
-        )}
-      </div>
-    </main>
+        </div>
+      ) : (
+        <p><strong>Completion Note:</strong> {request.completion_note || 'None'}</p>
+      )}
+    </div>
   );
 }

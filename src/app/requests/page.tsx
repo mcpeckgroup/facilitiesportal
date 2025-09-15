@@ -2,96 +2,90 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getSupabase } from '../../lib/supabase/client';
-
-type WO = {
-  id: string;
-  title: string | null;
-  priority: string | null;
-  status: string | null;
-  created_at: string | null;
-  business?: string | null;
-  location?: string | null;
-  requested_by_name?: string | null;
-};
+import { supabase } from '@/lib/supabase/client';
 
 export default function RequestsPage() {
-  const [rows, setRows] = useState<WO[]>([]);
-  const [err, setErr] = useState<string | null>(null);
+  const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [businessFilter, setBusinessFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
 
   useEffect(() => {
-    (async () => {
-      try {
-        const supabase = getSupabase();
-        const { data, error } = await supabase
-          .from('work_orders')
-          .select('id,title,priority,status,created_at,business,location,requested_by_name')
-          .in('status', ['open', 'in_progress'])
-          .order('created_at', { ascending: false });
+    const fetchRequests = async () => {
+      setLoading(true);
 
-        if (error) throw error;
-        setRows(data || []);
-      } catch (e: any) {
-        setErr(e.message ?? 'Failed to load');
-      } finally {
-        setLoading(false);
+      let query = supabase.from('work_orders').select('*').eq('status', 'open');
+
+      if (businessFilter !== 'all') {
+        query = query.eq('business', businessFilter);
       }
-    })();
-  }, []);
+      if (priorityFilter !== 'all') {
+        query = query.eq('priority', priorityFilter);
+      }
+
+      const { data, error } = await query.order('id', { ascending: false });
+
+      if (!error) setRequests(data || []);
+      setLoading(false);
+    };
+
+    fetchRequests();
+  }, [businessFilter, priorityFilter]);
 
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Requests</h1>
-        <div className="flex gap-2">
-          <Link href="/requests/completed" className="px-3 py-2 rounded border">
-            Completed
-          </Link>
-          <Link href="/requests/new" className="px-3 py-2 rounded bg-black text-white">
-            New Request
-          </Link>
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">Open Work Orders</h1>
+
+      {/* Filters */}
+      <div className="flex space-x-4 mb-6">
+        <div>
+          <label className="block font-medium">Filter by Business</label>
+          <select
+            className="border rounded px-2 py-1"
+            value={businessFilter}
+            onChange={(e) => setBusinessFilter(e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="Infuserve America">Infuserve America</option>
+            <option value="Pharmetric">Pharmetric</option>
+            <option value="Issak">Issak</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block font-medium">Filter by Priority</label>
+          <select
+            className="border rounded px-2 py-1"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="emergency">Emergency</option>
+            <option value="urgent">Urgent</option>
+            <option value="non_critical">Non-Critical</option>
+            <option value="routine">Routine</option>
+          </select>
         </div>
       </div>
 
-      {loading && <p>Loading…</p>}
-      {err && <p className="text-red-600">{err}</p>}
-
-      <div className="overflow-x-auto border rounded">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="text-left p-3">Title</th>
-              <th className="text-left p-3">Business</th>
-              <th className="text-left p-3">Priority</th>
-              <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t hover:bg-gray-50">
-                <td className="p-3">
-                  <Link href={`/requests/${r.id}`} className="text-blue-600 hover:underline">
-                    {r.title ?? '(no title)'}
-                  </Link>
-                </td>
-                <td className="p-3">{r.business ?? '—'}</td>
-                <td className="p-3">{r.priority ?? '—'}</td>
-                <td className="p-3">{r.status ?? '—'}</td>
-                <td className="p-3">{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
-              </tr>
-            ))}
-            {!loading && rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className="p-6 text-center text-gray-500">
-                  No requests yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </main>
+      {loading ? (
+        <p>Loading...</p>
+      ) : requests.length === 0 ? (
+        <p>No open requests found.</p>
+      ) : (
+        <ul className="divide-y">
+          {requests.map((req) => (
+            <li key={req.id} className="py-3">
+              <Link href={`/requests/${req.id}`} className="text-blue-600 hover:underline">
+                {req.title}
+              </Link>
+              <div className="text-sm text-gray-500">
+                {req.business} • {req.priority}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

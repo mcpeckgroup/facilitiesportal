@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabase/client";
 type WorkOrder = {
   id: string;
   title: string;
-  description: string;
   business: string;
   priority: string;
   status: string;
@@ -18,32 +17,32 @@ type WorkOrder = {
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<WorkOrder[]>([]);
-  const [businessFilter, setBusinessFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [businessFilter, setBusinessFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
 
   useEffect(() => {
     async function fetchRequests() {
-      const { data, error } = await supabase
-        .from("work_orders")
-        .select("*")
-        .eq("status", "open")
-        .order("created_at", { ascending: false });
+      let query = supabase.from("work_orders").select("*").eq("status", "open");
 
-      if (error) console.error("Error fetching requests:", error);
-      else setRequests(data || []);
+      if (businessFilter) query = query.eq("business", businessFilter);
+      if (priorityFilter) query = query.eq("priority", priorityFilter);
+
+      const { data, error } = await query;
+      if (!error && data) setRequests(data);
     }
     fetchRequests();
-  }, []);
+  }, [businessFilter, priorityFilter]);
 
-  const filteredRequests = requests.filter((req) => {
-    return (
-      (businessFilter === "all" || req.business === businessFilter) &&
-      (priorityFilter === "all" || req.priority === priorityFilter)
-    );
-  });
+  const blockStyle: React.CSSProperties = {
+    border: "1px solid #ddd",
+    borderRadius: "8px",
+    padding: "15px",
+    marginBottom: "15px",
+    background: "#fafafa",
+  };
 
   return (
-    <div style={{ padding: "20px" }}>
+    <div style={{ padding: "20px", maxWidth: "800px", margin: "auto" }}>
       <h1>Open Requests</h1>
 
       {/* Tabs */}
@@ -62,20 +61,19 @@ export default function RequestsPage() {
             value={businessFilter}
             onChange={(e) => setBusinessFilter(e.target.value)}
           >
-            <option value="all">All</option>
+            <option value="">All</option>
             <option value="Infuserve America">Infuserve America</option>
             <option value="Pharmetric">Pharmetric</option>
             <option value="Issak">Issak</option>
           </select>
         </label>
-
         <label style={{ marginLeft: "20px" }}>
           Filter by Priority:{" "}
           <select
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
           >
-            <option value="all">All</option>
+            <option value="">All</option>
             <option value="emergency">Emergency</option>
             <option value="urgent">Urgent</option>
             <option value="non_critical">Non-Critical</option>
@@ -84,30 +82,25 @@ export default function RequestsPage() {
         </label>
       </div>
 
-      {/* Request List */}
-      <ul>
-        {filteredRequests.map((req) => (
-          <li key={req.id} style={{ marginBottom: "15px" }}>
-            <Link href={`/requests/${req.id}`}>
-              <strong>{req.title}</strong>
-            </Link>
-            <p>{req.description}</p>
-            <p>
-              <strong>Business:</strong> {req.business} |{" "}
-              <strong>Priority:</strong> {req.priority}
-            </p>
-            <p>
-              <strong>Submitted by:</strong> {req.submitter_name} ({req.submitter_email})
-            </p>
-            <p>
-              <strong>Submitted:</strong>{" "}
-              {req.created_at
-                ? new Date(req.created_at).toLocaleString()
-                : "—"}
-            </p>
-          </li>
-        ))}
-      </ul>
+      {/* Requests List */}
+      {requests.length === 0 && <p>No open requests.</p>}
+      {requests.map((req) => (
+        <div key={req.id} style={blockStyle}>
+          <h3>
+            <Link href={`/requests/${req.id}`}>{req.title}</Link>
+          </h3>
+          <p><strong>Business:</strong> {req.business}</p>
+          <p><strong>Priority:</strong> {req.priority}</p>
+          <p>
+            <strong>Submitted by:</strong> {req.submitter_name} (
+            {req.submitter_email})
+          </p>
+          <p>
+            <strong>Submitted:</strong>{" "}
+            {new Date(req.created_at).toLocaleString()}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }

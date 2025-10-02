@@ -93,6 +93,55 @@ export default function RequestDetailPage() {
     };
   }, [id]);
 
+  // Realtime subscriptions
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`work-order-${id}`)
+      // New notes
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "work_order_notes", filter: `work_order_id=eq.${id}` },
+        (payload) => {
+          const newNote = payload.new as unknown as WorkOrderNote;
+          setNotes((prev) => [newNote, ...prev]);
+        }
+      )
+      // Updated notes
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "work_order_notes", filter: `work_order_id=eq.${id}` },
+        (payload) => {
+          const updated = payload.new as unknown as WorkOrderNote;
+          setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+        }
+      )
+      // Deleted notes
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "work_order_notes", filter: `work_order_id=eq.${id}` },
+        (payload) => {
+          const removed = payload.old as unknown as WorkOrderNote;
+          setNotes((prev) => prev.filter((n) => n.id !== removed.id));
+        }
+      )
+      // Request row updates
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "work_orders", filter: `id=eq.${id}` },
+        (payload) => {
+          const updated = payload.new as unknown as WorkOrder;
+          setRequest(updated);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id]);
+
   async function markCompleted() {
     if (!request) return;
     setSaving(true);
@@ -144,16 +193,21 @@ export default function RequestDetailPage() {
   async function addOngoingNote() {
     if (!id || !noteBody.trim()) return;
     setNoteSaving(true);
+
+    // only include optional fields if present
+    const payload: Record<string, any> = {
+      work_order_id: id,
+      body: noteBody.trim(),
+    };
+    if (noteName) payload.author_name = noteName;
+    if (noteEmail) payload.author_email = noteEmail;
+
     const { data, error } = await supabase
       .from("work_order_notes")
-      .insert({
-        work_order_id: id,
-        body: noteBody.trim(),
-        author_name: noteName || null,
-        author_email: noteEmail || null,
-      })
+      .insert(payload)
       .select("*")
       .single();
+
     setNoteSaving(false);
     if (error) {
       setError(error.message);

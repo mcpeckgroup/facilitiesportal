@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
@@ -20,6 +20,15 @@ interface WorkOrder {
   completed_at: string | null;
 }
 
+interface WorkOrderNote {
+  id: string;
+  work_order_id: string;
+  body: string;
+  author_name: string | null;
+  author_email: string | null;
+  created_at: string;
+}
+
 export default function RequestDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -30,6 +39,15 @@ export default function RequestDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Ongoing notes state
+  const [notes, setNotes] = useState<WorkOrderNote[]>([]);
+  const [noteBody, setNoteBody] = useState("");
+  const [noteName, setNoteName] = useState("");
+  const [noteEmail, setNoteEmail] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  const canAddOngoingNote = useMemo(() => request?.status === "open", [request?.status]);
 
   // Fetch request
   useEffect(() => {
@@ -51,6 +69,25 @@ export default function RequestDetailPage() {
       }
       setLoading(false);
     })();
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  // Fetch ongoing notes
+  useEffect(() => {
+    if (!id) return;
+    let isMounted = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from("work_order_notes")
+        .select("*")
+        .eq("work_order_id", id)
+        .order("created_at", { ascending: false });
+      if (!isMounted) return;
+      if (!error && data) setNotes(data as WorkOrderNote[]);
+    })();
+
     return () => {
       isMounted = false;
     };
@@ -102,6 +139,30 @@ export default function RequestDetailPage() {
     setRequest(data as WorkOrder);
     setNote("");
     router.refresh();
+  }
+
+  async function addOngoingNote() {
+    if (!id || !noteBody.trim()) return;
+    setNoteSaving(true);
+    const { data, error } = await supabase
+      .from("work_order_notes")
+      .insert({
+        work_order_id: id,
+        body: noteBody.trim(),
+        author_name: noteName || null,
+        author_email: noteEmail || null,
+      })
+      .select("*")
+      .single();
+    setNoteSaving(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    if (data) {
+      setNotes((prev) => [data as WorkOrderNote, ...prev]);
+      setNoteBody("");
+    }
   }
 
   function LabelValue({ label, children }: { label: string; children: React.ReactNode }) {
@@ -177,6 +238,74 @@ export default function RequestDetailPage() {
               <span className="text-gray-500">—</span>
             )}
           </LabelValue>
+        </div>
+      </div>
+
+      {/* Ongoing Notes */}
+      <div className="border rounded-xl shadow p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Ongoing Notes</h2>
+          {!canAddOngoingNote && (
+            <span className="text-xs text-gray-500">(Adding notes is disabled once completed)</span>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <textarea
+            value={noteBody}
+            onChange={(e) => setNoteBody(e.target.value)}
+            className="w-full border rounded p-2 min-h-[90px]"
+            placeholder="Add a progress update, diagnosis, parts on order, next steps, etc."
+            disabled={!canAddOngoingNote}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={noteName}
+              onChange={(e) => setNoteName(e.target.value)}
+              className="border rounded p-2"
+              placeholder="Your name (optional)"
+              disabled={!canAddOngoingNote}
+            />
+            <input
+              type="email"
+              value={noteEmail}
+              onChange={(e) => setNoteEmail(e.target.value)}
+              className="border rounded p-2"
+              placeholder="Your email (optional)"
+              disabled={!canAddOngoingNote}
+            />
+          </div>
+          <button
+            onClick={addOngoingNote}
+            disabled={!canAddOngoingNote || noteSaving || !noteBody.trim()}
+            className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60"
+          >
+            {noteSaving ? "Saving…" : "Add Note"}
+          </button>
+        </div>
+
+        <div className="divide-y">
+          {notes.length === 0 ? (
+            <p className="text-sm text-gray-500">No notes yet.</p>
+          ) : (
+            notes.map((n) => (
+              <div key={n.id} className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">
+                    {n.author_name || "Anonymous"}
+                    {n.author_email ? (
+                      <span className="text-gray-500"> • {n.author_email}</span>
+                    ) : null}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {new Date(n.created_at).toLocaleString()}
+                  </div>
+                </div>
+                <p className="text-sm whitespace-pre-wrap mt-1">{n.body}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

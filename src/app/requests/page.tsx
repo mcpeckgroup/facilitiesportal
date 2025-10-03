@@ -33,7 +33,7 @@ export default function RequestsPage() {
       const { data, error } = await supabase
         .from("work_orders")
         .select("*")
-        .eq("status", "open") // ✅ lowercase filter
+        .eq("status", "open") // keep lowercase
         .order("created_at", { ascending: false });
       if (!error && data) setRequests(data);
     }
@@ -62,13 +62,21 @@ export default function RequestsPage() {
 
   return (
     <div className="p-6">
-      {/* Tabs */}
-      <div className="flex space-x-4 mb-6">
-        <Link href="/requests" className="px-4 py-2 bg-blue-600 text-white rounded">
-          Open Requests
-        </Link>
-        <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">
-          Completed Requests
+      {/* Tabs + New button */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex space-x-4">
+          <Link href="/requests" className="px-4 py-2 bg-blue-600 text-white rounded">
+            Open Requests
+          </Link>
+          <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">
+            Completed Requests
+          </Link>
+        </div>
+        <Link
+          href="/requests/new"
+          className="px-4 py-2 bg-green-600 text-white rounded"
+        >
+          New Request
         </Link>
       </div>
 
@@ -98,7 +106,7 @@ export default function RequestsPage() {
         </select>
       </div>
 
-      {/* Request list */}
+      {/* List */}
       <div className="grid gap-4">
         {filteredRequests.map((req) => {
           const reqNotes = getNotesForRequest(req.id);
@@ -128,6 +136,9 @@ export default function RequestsPage() {
             </div>
           );
         })}
+        {filteredRequests.length === 0 && (
+          <p className="text-sm text-gray-500">No open requests match your filters.</p>
+        )}
       </div>
     </div>
   );

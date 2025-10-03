@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 type WorkOrder = {
@@ -33,17 +34,23 @@ export default function RequestDetailPage({
   params: { id: string };
 }) {
   const id = params.id;
+  const router = useRouter();
 
   const [request, setRequest] = useState<WorkOrder | null>(null);
   const [notes, setNotes] = useState<WorkOrderNote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // form state (all required)
+  // Ongoing note form (all required)
   const [noteBody, setNoteBody] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [authorEmail, setAuthorEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingNote, setSubmittingNote] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Complete-request form
+  const [completionNote, setCompletionNote] = useState("");
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
 
   // Fetch request + notes
   useEffect(() => {
@@ -100,8 +107,7 @@ export default function RequestDetailPage({
   const isOpen = useMemo(() => request?.status === "open", [request]);
 
   function validateEmail(email: string) {
-    // Simple RFC-ish check that’s good enough for UI validation
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
   }
 
   async function handleAddNote(e: React.FormEvent) {
@@ -121,7 +127,7 @@ export default function RequestDetailPage({
       return;
     }
 
-    setSubmitting(true);
+    setSubmittingNote(true);
     const { data, error } = await supabase
       .from("work_order_notes")
       .insert({
@@ -133,7 +139,7 @@ export default function RequestDetailPage({
       .select("*")
       .single();
 
-    setSubmitting(false);
+    setSubmittingNote(false);
 
     if (error) {
       setFormError(error.message || "Failed to add note.");
@@ -141,14 +147,43 @@ export default function RequestDetailPage({
     }
 
     if (data) {
-      // Optimistic add (realtime will also bring it in)
       setNotes((prev) =>
         [data as WorkOrderNote, ...prev].sort(
           (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
         )
       );
       setNoteBody("");
-      // do not clear name/email so the same person can add multiple notes
+      // keep name/email for convenience
+    }
+  }
+
+  async function handleMarkCompleted() {
+    if (!request || !isOpen) return;
+    setCompleteError(null);
+    setCompleting(true);
+
+    const { data, error } = await supabase
+      .from("work_orders")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        completion_note: completionNote.trim() || null,
+      })
+      .eq("id", request.id)
+      .select("*")
+      .single();
+
+    setCompleting(false);
+
+    if (error) {
+      setCompleteError(error.message || "Failed to mark as completed.");
+      return;
+    }
+
+    if (data) {
+      setRequest(data as WorkOrder);
+      // Navigate to completed list per your requirement
+      router.push("/requests/completed");
     }
   }
 
@@ -177,24 +212,57 @@ export default function RequestDetailPage({
 
   return (
     <div className="p-6 space-y-6">
-      {/* Tabs */}
-      <div className="flex space-x-4">
-        <Link
-          href="/requests"
-          className={`px-4 py-2 rounded ${
-            isOpen ? "bg-blue-600 text-white" : "bg-gray-300"
-          }`}
-        >
-          Open Requests
-        </Link>
-        <Link
-          href="/requests/completed"
-          className={`px-4 py-2 rounded ${
-            !isOpen ? "bg-blue-600 text-white" : "bg-gray-300"
-          }`}
-        >
-          Completed Requests
-        </Link>
+      {/* Tabs + Back + (Mark Completed when open) */}
+      <div className="flex items-center justify-between">
+        <div className="flex space-x-4">
+          <Link
+            href="/requests"
+            className={`px-4 py-2 rounded ${
+              isOpen ? "bg-blue-600 text-white" : "bg-gray-300"
+            }`}
+          >
+            Open Requests
+          </Link>
+          <Link
+            href="/requests/completed"
+            className={`px-4 py-2 rounded ${
+              !isOpen ? "bg-blue-600 text-white" : "bg-gray-300"
+            }`}
+          >
+            Completed Requests
+          </Link>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Back to correct list */}
+          {isOpen ? (
+            <Link
+              href="/requests"
+              className="px-4 py-2 bg-gray-200 rounded border"
+            >
+              ← Back to Open
+            </Link>
+          ) : (
+            <Link
+              href="/requests/completed"
+              className="px-4 py-2 bg-gray-200 rounded border"
+            >
+              ← Back to Completed
+            </Link>
+          )}
+
+          {/* Mark as Completed (only for open) */}
+          {isOpen && (
+            <button
+              onClick={handleMarkCompleted}
+              disabled={completing}
+              className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60"
+              title="Set status to completed"
+            >
+              {completing ? "Completing…" : "Mark as Completed"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Header */}
@@ -222,9 +290,34 @@ export default function RequestDetailPage({
         )}
       </div>
 
+      {/* When OPEN: optional completion note field (so you can add a note before clicking "Mark as Completed") */}
+      {isOpen && (
+        <div className="border rounded-lg p-5 shadow">
+          <h2 className="font-semibold mb-2">Completion Note (optional)</h2>
+          <textarea
+            className="w-full border rounded p-2 min-h-[90px]"
+            value={completionNote}
+            onChange={(e) => setCompletionNote(e.target.value)}
+            placeholder="Add a completion note (optional)…"
+          />
+          {completeError && (
+            <p className="text-sm text-red-600 mt-2">{completeError}</p>
+          )}
+          <div className="mt-3">
+            <button
+              onClick={handleMarkCompleted}
+              disabled={completing}
+              className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60"
+            >
+              {completing ? "Completing…" : "Mark as Completed"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Notes */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Add note (only show for open requests, but you can remove this guard if you want notes after completion) */}
+        {/* Add note (only when open; you can remove this guard if you want notes after completion) */}
         <div className="border rounded-lg p-5 shadow">
           <h2 className="font-semibold mb-3">Add Ongoing Note</h2>
 
@@ -276,10 +369,10 @@ export default function RequestDetailPage({
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submittingNote}
                 className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60"
               >
-                {submitting ? "Adding…" : "Add Note"}
+                {submittingNote ? "Adding…" : "Add Note"}
               </button>
             </form>
           ) : (

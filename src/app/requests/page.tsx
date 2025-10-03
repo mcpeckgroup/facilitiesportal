@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 type WorkOrder = {
@@ -13,36 +12,104 @@ type WorkOrder = {
   priority: string;
   submitter_name: string;
   submitter_email: string;
+  status: "open" | "completed" | string;
   created_at: string;
+  completed_at: string | null;
+  completion_note: string | null;
 };
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<WorkOrder[]>([]);
   const [filterBusiness, setFilterBusiness] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
-  const router = useRouter();
 
+  // Initial fetch
   useEffect(() => {
-    async function fetchRequests() {
+    let mounted = true;
+    (async () => {
       const { data, error } = await supabase
         .from("work_orders")
         .select("*")
         .eq("status", "open")
         .order("created_at", { ascending: false });
-      if (!error && data) setRequests(data);
-    }
-    fetchRequests();
+      if (!error && data && mounted) setRequests(data as WorkOrder[]);
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const filteredRequests = requests.filter((req) => {
-    return (
-      (filterBusiness ? req.business === filterBusiness : true) &&
-      (filterPriority ? req.priority === filterPriority : true)
-    );
-  });
+  // Realtime subscription: INSERT/UPDATE/DELETE
+  useEffect(() => {
+    const channel = supabase
+      .channel("work-orders-open")
+      // INSERT: add if status is open
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "work_orders" },
+        (payload) => {
+          const row = payload.new as unknown as WorkOrder;
+          if (row.status === "open") {
+            setRequests((prev) => {
+              const exists = prev.some((p) => p.id === row.id);
+              const next = exists ? prev.map((p) => (p.id === row.id ? row : p)) : [row, ...prev];
+              return next.sort(
+                (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+              );
+            });
+          }
+        }
+      )
+      // UPDATE: move in/out of open, or update fields
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "work_orders" },
+        (payload) => {
+          const row = payload.new as unknown as WorkOrder;
+          setRequests((prev) => {
+            const inOpen = row.status === "open";
+            const exists = prev.some((p) => p.id === row.id);
+            if (inOpen) {
+              const next = exists ? prev.map((p) => (p.id === row.id ? row : p)) : [row, ...prev];
+              return next.sort(
+                (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+              );
+            } else {
+              return exists ? prev.filter((p) => p.id !== row.id) : prev;
+            }
+          });
+        }
+      )
+      // DELETE: remove from list
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "work_orders" },
+        (payload) => {
+          const oldRow = payload.old as unknown as WorkOrder;
+          setRequests((prev) => prev.filter((p) => p.id !== oldRow.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const filtered = useMemo(
+    () =>
+      requests.filter((req) => {
+        return (
+          (filterBusiness ? req.business === filterBusiness : true) &&
+          (filterPriority ? req.priority === filterPriority : true)
+        );
+      }),
+    [requests, filterBusiness, filterPriority]
+  );
 
   return (
     <div className="p-6">
+      {/* Tabs */}
       <div className="flex space-x-4 mb-6">
         <Link href="/requests" className="px-4 py-2 bg-blue-600 text-white rounded">
           Open Requests
@@ -52,6 +119,7 @@ export default function RequestsPage() {
         </Link>
       </div>
 
+      {/* Filters */}
       <div className="flex space-x-4 mb-6">
         <select
           value={filterBusiness}
@@ -77,8 +145,9 @@ export default function RequestsPage() {
         </select>
       </div>
 
+      {/* List */}
       <div className="grid gap-4">
-        {filteredRequests.map((req) => (
+        {filtered.map((req) => (
           <div key={req.id} className="border rounded-lg p-4 shadow">
             <h2 className="text-lg font-bold">
               <Link href={`/requests/${req.id}`}>{req.title}</Link>
@@ -95,6 +164,9 @@ export default function RequestsPage() {
             </p>
           </div>
         ))}
+        {filtered.length === 0 && (
+          <p className="text-sm text-gray-500">No open requests match your filters.</p>
+        )}
       </div>
     </div>
   );

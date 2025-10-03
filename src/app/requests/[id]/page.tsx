@@ -28,11 +28,7 @@ type WorkOrderNote = {
   created_at: string;
 };
 
-export default function RequestDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function RequestDetailPage({ params }: { params: { id: string } }) {
   const id = params.id;
   const router = useRouter();
 
@@ -47,24 +43,23 @@ export default function RequestDetailPage({
   const [submittingNote, setSubmittingNote] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Complete-request form
-  const [completionNote, setCompletionNote] = useState("");
+  // Complete / Reopen state
   const [completing, setCompleting] = useState(false);
-  const [completeError, setCompleteError] = useState<string | null>(null);
+  const [reopening, setReopening] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // Fetch request + notes
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [{ data: req, error: reqErr }, { data: nts, error: ntsErr }] =
-        await Promise.all([
-          supabase.from("work_orders").select("*").eq("id", id).single(),
-          supabase
-            .from("work_order_notes")
-            .select("*")
-            .eq("work_order_id", id)
-            .order("created_at", { ascending: false }),
-        ]);
+      const [{ data: req, error: reqErr }, { data: nts, error: ntsErr }] = await Promise.all([
+        supabase.from("work_orders").select("*").eq("id", id).single(),
+        supabase
+          .from("work_order_notes")
+          .select("*")
+          .eq("work_order_id", id)
+          .order("created_at", { ascending: false }),
+      ]);
       if (!cancelled) {
         if (!reqErr) setRequest(req as WorkOrder);
         if (!ntsErr && nts) setNotes(nts as WorkOrderNote[]);
@@ -82,23 +77,13 @@ export default function RequestDetailPage({
       .channel(`notes-${id}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "work_order_notes",
-          filter: `work_order_id=eq.${id}`,
-        },
+        { event: "INSERT", schema: "public", table: "work_order_notes", filter: `work_order_id=eq.${id}` },
         (payload) => {
           const row = payload.new as unknown as WorkOrderNote;
-          setNotes((prev) =>
-            [row, ...prev].sort(
-              (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
-            )
-          );
+          setNotes((prev) => [row, ...prev].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)));
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -130,15 +115,9 @@ export default function RequestDetailPage({
     setSubmittingNote(true);
     const { data, error } = await supabase
       .from("work_order_notes")
-      .insert({
-        work_order_id: id,
-        body,
-        author_name: name,
-        author_email: email,
-      })
+      .insert({ work_order_id: id, body, author_name: name, author_email: email })
       .select("*")
       .single();
-
     setSubmittingNote(false);
 
     if (error) {
@@ -147,11 +126,7 @@ export default function RequestDetailPage({
     }
 
     if (data) {
-      setNotes((prev) =>
-        [data as WorkOrderNote, ...prev].sort(
-          (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
-        )
-      );
+      setNotes((prev) => [data as WorkOrderNote, ...prev].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)));
       setNoteBody("");
       // keep name/email for convenience
     }
@@ -159,7 +134,7 @@ export default function RequestDetailPage({
 
   async function handleMarkCompleted() {
     if (!request || !isOpen) return;
-    setCompleteError(null);
+    setStatusError(null);
     setCompleting(true);
 
     const { data, error } = await supabase
@@ -167,7 +142,7 @@ export default function RequestDetailPage({
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
-        completion_note: completionNote.trim() || null,
+        // keep existing completion_note unchanged (null unless you set it elsewhere)
       })
       .eq("id", request.id)
       .select("*")
@@ -176,20 +151,46 @@ export default function RequestDetailPage({
     setCompleting(false);
 
     if (error) {
-      setCompleteError(error.message || "Failed to mark as completed.");
+      setStatusError(error.message || "Failed to mark as completed.");
       return;
     }
 
     if (data) {
       setRequest(data as WorkOrder);
-      // Navigate to completed list per your requirement
-      router.push("/requests/completed");
+      router.push("/requests/completed"); // go to completed list
     }
   }
 
-  if (loading) {
-    return <div className="p-6 text-sm text-gray-600">Loading…</div>;
+  async function handleReopen() {
+    if (!request || isOpen) return;
+    setStatusError(null);
+    setReopening(true);
+
+    const { data, error } = await supabase
+      .from("work_orders")
+      .update({
+        status: "open",
+        completed_at: null,
+        // preserve completion_note to keep history; it will hide when not completed
+      })
+      .eq("id", request.id)
+      .select("*")
+      .single();
+
+    setReopening(false);
+
+    if (error) {
+      setStatusError(error.message || "Failed to reopen request.");
+      return;
+    }
+
+    if (data) {
+      setRequest(data as WorkOrder);
+      router.push("/requests"); // go to open list
+    }
   }
+
+  if (loading) return <div className="p-6 text-sm text-gray-600">Loading…</div>;
 
   if (!request) {
     return (
@@ -198,10 +199,7 @@ export default function RequestDetailPage({
           <Link href="/requests" className="px-4 py-2 bg-gray-300 rounded">
             Open Requests
           </Link>
-          <Link
-            href="/requests/completed"
-            className="px-4 py-2 bg-gray-300 rounded"
-          >
+          <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">
             Completed Requests
           </Link>
         </div>
@@ -212,54 +210,47 @@ export default function RequestDetailPage({
 
   return (
     <div className="p-6 space-y-6">
-      {/* Tabs + Back + (Mark Completed when open) */}
+      {/* Tabs + Back + Action */}
       <div className="flex items-center justify-between">
         <div className="flex space-x-4">
           <Link
             href="/requests"
-            className={`px-4 py-2 rounded ${
-              isOpen ? "bg-blue-600 text-white" : "bg-gray-300"
-            }`}
+            className={`px-4 py-2 rounded ${isOpen ? "bg-blue-600 text-white" : "bg-gray-300"}`}
           >
             Open Requests
           </Link>
           <Link
             href="/requests/completed"
-            className={`px-4 py-2 rounded ${
-              !isOpen ? "bg-blue-600 text-white" : "bg-gray-300"
-            }`}
+            className={`px-4 py-2 rounded ${!isOpen ? "bg-blue-600 text-white" : "bg-gray-300"}`}
           >
             Completed Requests
           </Link>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Back to correct list */}
+          {/* Back to the correct list */}
           {isOpen ? (
-            <Link
-              href="/requests"
-              className="px-4 py-2 bg-gray-200 rounded border"
-            >
-              ← Back to Open
-            </Link>
+            <Link href="/requests" className="px-4 py-2 bg-gray-200 rounded border">← Back to Open</Link>
           ) : (
-            <Link
-              href="/requests/completed"
-              className="px-4 py-2 bg-gray-200 rounded border"
-            >
-              ← Back to Completed
-            </Link>
+            <Link href="/requests/completed" className="px-4 py-2 bg-gray-200 rounded border">← Back to Completed</Link>
           )}
 
-          {/* Mark as Completed (only for open) */}
-          {isOpen && (
+          {/* Action button */}
+          {isOpen ? (
             <button
               onClick={handleMarkCompleted}
               disabled={completing}
               className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60"
-              title="Set status to completed"
             >
               {completing ? "Completing…" : "Mark as Completed"}
+            </button>
+          ) : (
+            <button
+              onClick={handleReopen}
+              disabled={reopening}
+              className="px-4 py-2 bg-yellow-600 text-white rounded disabled:opacity-60"
+            >
+              {reopening ? "Reopening…" : "Reopen Request"}
             </button>
           )}
         </div>
@@ -269,55 +260,23 @@ export default function RequestDetailPage({
       <div className="border rounded-lg p-5 shadow">
         <h1 className="text-xl font-semibold mb-1">{request.title}</h1>
         <p className="mb-2">{request.description}</p>
-        <p className="text-sm text-gray-600">
-          Business: {request.business} | Priority: {request.priority}
-        </p>
+        <p className="text-sm text-gray-600">Business: {request.business} | Priority: {request.priority}</p>
         <p className="text-sm text-gray-600">
           Submitted by: {request.submitter_name} ({request.submitter_email})
         </p>
-        <p className="text-sm text-gray-600">
-          Submitted at: {new Date(request.created_at).toLocaleString()}
-        </p>
+        <p className="text-sm text-gray-600">Submitted at: {new Date(request.created_at).toLocaleString()}</p>
         {request.completed_at && (
           <>
-            <p className="text-sm text-gray-600">
-              Completed at: {new Date(request.completed_at).toLocaleString()}
-            </p>
-            <p className="text-sm italic">
-              Completion Notes: {request.completion_note || "—"}
-            </p>
+            <p className="text-sm text-gray-600">Completed at: {new Date(request.completed_at).toLocaleString()}</p>
+            <p className="text-sm italic">Completion Notes: {request.completion_note || "—"}</p>
           </>
         )}
+        {statusError && <p className="text-sm text-red-600 mt-2">{statusError}</p>}
       </div>
-
-      {/* When OPEN: optional completion note field (so you can add a note before clicking "Mark as Completed") */}
-      {isOpen && (
-        <div className="border rounded-lg p-5 shadow">
-          <h2 className="font-semibold mb-2">Completion Note (optional)</h2>
-          <textarea
-            className="w-full border rounded p-2 min-h-[90px]"
-            value={completionNote}
-            onChange={(e) => setCompletionNote(e.target.value)}
-            placeholder="Add a completion note (optional)…"
-          />
-          {completeError && (
-            <p className="text-sm text-red-600 mt-2">{completeError}</p>
-          )}
-          <div className="mt-3">
-            <button
-              onClick={handleMarkCompleted}
-              disabled={completing}
-              className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60"
-            >
-              {completing ? "Completing…" : "Mark as Completed"}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Notes */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Add note (only when open; you can remove this guard if you want notes after completion) */}
+        {/* Add note (only when open) */}
         <div className="border rounded-lg p-5 shadow">
           <h2 className="font-semibold mb-3">Add Ongoing Note</h2>
 
@@ -363,9 +322,7 @@ export default function RequestDetailPage({
                 </div>
               </div>
 
-              {formError && (
-                <p className="text-sm text-red-600">{formError}</p>
-              )}
+              {formError && <p className="text-sm text-red-600">{formError}</p>}
 
               <button
                 type="submit"
@@ -376,30 +333,23 @@ export default function RequestDetailPage({
               </button>
             </form>
           ) : (
-            <p className="text-sm text-gray-600">
-              This request is completed. Adding new notes is disabled.
-            </p>
+            <p className="text-sm text-gray-600">This request is completed. Adding new notes is disabled.</p>
           )}
         </div>
 
         {/* Notes list */}
         <div className="border rounded-lg p-5 shadow">
-          <h2 className="font-semibold mb-3">
-            Ongoing Notes ({notes.length})
-          </h2>
+          <h2 className="font-semibold mb-3">Ongoing Notes ({notes.length})</h2>
           <div className="space-y-3">
             {notes.map((n) => (
               <div key={n.id} className="border rounded p-3">
                 <p className="whitespace-pre-wrap">{n.body}</p>
                 <p className="text-xs text-gray-600 mt-2">
-                  — {n.author_name} ({n.author_email}) •{" "}
-                  {new Date(n.created_at).toLocaleString()}
+                  — {n.author_name} ({n.author_email}) • {new Date(n.created_at).toLocaleString()}
                 </p>
               </div>
             ))}
-            {notes.length === 0 && (
-              <p className="text-sm text-gray-500">No notes yet.</p>
-            )}
+            {notes.length === 0 && <p className="text-sm text-gray-500">No notes yet.</p>}
           </div>
         </div>
       </div>

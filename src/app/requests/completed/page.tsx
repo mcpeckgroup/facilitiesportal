@@ -162,4 +162,31 @@ export default function CompletedRequestsPage() {
               <Link href={`/requests/${req.id}`}>{req.title}</Link>
             </h2>
             <p>{req.description}</p>
-            <p className="text-sm
+            <p className="text-sm text-gray-600">
+              Business: {req.business} | Priority: {req.priority}
+            </p>
+            <p className="text-sm text-gray-600">
+              Submitted by: {req.submitter_name} ({req.submitter_email})
+            </p>
+            <p className="text-sm text-gray-600">
+              Submitted at: {new Date(req.created_at).toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-600">
+              Completed at: {req.completed_at ? new Date(req.completed_at).toLocaleString() : "—"}
+            </p>
+            <p className="text-sm italic">Completion Notes: {req.completion_note || "—"}</p>
+            <button
+              onClick={() => handleDelete(req.id)}
+              className="mt-2 px-3 py-1 bg-red-600 text-white rounded"
+            >
+              Delete
+            </button>
+          </div>
+        ))}
+        {filtered.length === 0 && (
+          <p className="text-sm text-gray-500">No completed requests match your filters.</p>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -43,7 +43,6 @@ export default function RequestsPage() {
   useEffect(() => {
     const channel = supabase
       .channel("work-orders-open")
-      // INSERT: add if status is open
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "work_orders" },
@@ -60,7 +59,6 @@ export default function RequestsPage() {
           }
         }
       )
-      // UPDATE: move in/out of open, or update fields
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "work_orders" },
@@ -80,7 +78,6 @@ export default function RequestsPage() {
           });
         }
       )
-      // DELETE: remove from list
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "work_orders" },

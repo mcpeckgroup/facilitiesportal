@@ -13,8 +13,6 @@ type WorkOrder = {
   submitter_name: string;
   submitter_email: string;
   created_at: string;
-  completed_at: string;
-  completion_note: string;
 };
 
 type WorkOrderNote = {
@@ -24,7 +22,7 @@ type WorkOrderNote = {
   created_at: string;
 };
 
-export default function CompletedRequestsPage() {
+export default function RequestsPage() {
   const [requests, setRequests] = useState<WorkOrder[]>([]);
   const [notes, setNotes] = useState<WorkOrderNote[]>([]);
   const [filterBusiness, setFilterBusiness] = useState("");
@@ -35,8 +33,8 @@ export default function CompletedRequestsPage() {
       const { data, error } = await supabase
         .from("work_orders")
         .select("*")
-        .eq("status", "completed")
-        .order("completed_at", { ascending: false });
+        .eq("status", "open") // ✅ lowercase filter
+        .order("created_at", { ascending: false });
       if (!error && data) setRequests(data);
     }
     fetchRequests();
@@ -62,22 +60,19 @@ export default function CompletedRequestsPage() {
     return notes.filter((n) => n.work_order_id === requestId);
   }
 
-  async function handleDelete(id: string) {
-    await supabase.from("work_orders").delete().eq("id", id);
-    setRequests((prev) => prev.filter((r) => r.id !== id));
-  }
-
   return (
     <div className="p-6">
+      {/* Tabs */}
       <div className="flex space-x-4 mb-6">
-        <Link href="/requests" className="px-4 py-2 bg-gray-300 rounded">
+        <Link href="/requests" className="px-4 py-2 bg-blue-600 text-white rounded">
           Open Requests
         </Link>
-        <Link href="/requests/completed" className="px-4 py-2 bg-blue-600 text-white rounded">
+        <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">
           Completed Requests
         </Link>
       </div>
 
+      {/* Filters */}
       <div className="flex space-x-4 mb-6">
         <select
           value={filterBusiness}
@@ -103,6 +98,7 @@ export default function CompletedRequestsPage() {
         </select>
       </div>
 
+      {/* Request list */}
       <div className="grid gap-4">
         {filteredRequests.map((req) => {
           const reqNotes = getNotesForRequest(req.id);
@@ -123,22 +119,12 @@ export default function CompletedRequestsPage() {
               <p className="text-sm text-gray-600">
                 Submitted at: {new Date(req.created_at).toLocaleString()}
               </p>
-              <p className="text-sm text-gray-600">
-                Completed at: {new Date(req.completed_at).toLocaleString()}
-              </p>
-              <p className="text-sm italic">Completion Notes: {req.completion_note}</p>
               {latestNote && (
                 <p className="text-sm text-blue-700 mt-2 italic">
                   Latest note: {latestNote.length > 80 ? latestNote.slice(0, 80) + "…" : latestNote}
                 </p>
               )}
               <p className="text-xs text-gray-500">Notes: {reqNotes.length}</p>
-              <button
-                onClick={() => handleDelete(req.id)}
-                className="mt-2 px-3 py-1 bg-red-600 text-white rounded"
-              >
-                Delete
-              </button>
             </div>
           );
         })}

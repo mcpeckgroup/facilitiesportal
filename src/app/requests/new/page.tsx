@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
@@ -20,8 +19,6 @@ type WorkOrder = {
 };
 
 export default function NewRequestPage() {
-  const router = useRouter();
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [business, setBusiness] = useState("");
@@ -82,12 +79,12 @@ export default function NewRequestPage() {
         body: JSON.stringify({ record: data }),
       });
     } catch {
-      // ignore notification errors so UX stays smooth
+      // ignore notify errors to keep UX smooth
     }
 
-    // 3) Redirect to the login page (as requested)
-    // Use absolute URL per your requirement.
-    window.location.assign("https://www.facilitiesportal.com/");
+    // 3) Redirect to the login page (absolute URL)
+    // Use replace so the user can't go "Back" to resubmit the same form.
+    window.location.replace("https://www.facilitiesportal.com/");
   }
 
   return (
@@ -118,7 +115,7 @@ export default function NewRequestPage() {
 
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
-        <textarea
+          <textarea
             className="w-full border rounded p-2 min-h-[120px]"
             value={description}
             onChange={(e) => setDescription(e.target.value)}

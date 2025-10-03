@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
 type WorkOrder = {
@@ -79,26 +78,16 @@ export default function NewRequestPage() {
         body: JSON.stringify({ record: data }),
       });
     } catch {
-      // ignore notify errors to keep UX smooth
+      // ignore notification errors to keep UX smooth
     }
 
     // 3) Redirect to the login page (absolute URL)
-    // Use replace so the user can't go "Back" to resubmit the same form.
+    // Use replace so the user can't go Back and resubmit the same form.
     window.location.replace("https://www.facilitiesportal.com/");
   }
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
-      {/* Tabs / Nav */}
-      <div className="flex space-x-4">
-        <Link href="/requests" className="px-4 py-2 bg-gray-300 rounded">
-          Open Requests
-        </Link>
-        <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">
-          Completed Requests
-        </Link>
-      </div>
-
       <h1 className="text-2xl font-semibold">New Request</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4 border rounded-xl p-5 shadow">

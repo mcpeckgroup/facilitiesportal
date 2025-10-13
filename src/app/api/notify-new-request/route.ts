@@ -17,10 +17,7 @@ export async function POST(req: Request) {
   try {
     const { record } = (await req.json()) as { record: NewRequestRecord };
 
-    if (!record?.title) {
-      console.error("[notify-new-request] Missing record payload");
-      return new Response("Missing record payload", { status: 400 });
-    }
+    if (!record?.title) return new Response("Missing record payload", { status: 400 });
 
     const apiKey = process.env.RESEND_API_KEY;
     const to = process.env.NOTIFY_TO || "eric@pharmetriclab.com";
@@ -46,14 +43,10 @@ export async function POST(req: Request) {
     });
 
     const text = await res.text();
-    if (!res.ok) {
-      console.error("[notify-new-request] Resend error", { status: res.status, body: text?.slice(0, 500) });
-      return new Response(`Resend error: ${text}`, { status: 502 });
-    }
+    if (!res.ok) return new Response(`Resend error: ${text}`, { status: 502 });
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   } catch (err: any) {
-    console.error("[notify-new-request] Uncaught", err);
     return new Response(String(err?.message || err), { status: 500 });
   }
 }

@@ -48,6 +48,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const [request, setRequest] = useState<WorkOrder | null>(null);
   const [notes, setNotes] = useState<WorkOrderNote[]>([]);
   const [filesByNote, setFilesByNote] = useState<Record<string, WorkOrderFile[]>>({});
+  const [requestFiles, setRequestFiles] = useState<WorkOrderFile[]>([]); // NEW: request-level images
   const [loading, setLoading] = useState(true);
 
   // Add note form state
@@ -89,13 +90,18 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         .order("created_at", { ascending: false });
 
       if (!cancelled && files) {
-        const map: Record<string, WorkOrderFile[]> = {};
+        const byNote: Record<string, WorkOrderFile[]> = {};
+        const atRequest: WorkOrderFile[] = [];
         for (const f of files as WorkOrderFile[]) {
-          if (!f.note_id) continue;
-          if (!map[f.note_id]) map[f.note_id] = [];
-          map[f.note_id].push(f);
+          if (f.note_id) {
+            if (!byNote[f.note_id]) byNote[f.note_id] = [];
+            byNote[f.note_id].push(f);
+          } else {
+            atRequest.push(f); // request-level
+          }
         }
-        setFilesByNote(map);
+        setFilesByNote(byNote);
+        setRequestFiles(atRequest);
       }
       if (!cancelled) setLoading(false);
     })();
@@ -332,7 +338,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
           >
             Open Requests
           </Link>
-          <Link
+        <Link
             href="/requests/completed"
             className={`px-4 py-2 rounded ${isCompleted ? "bg-blue-600 text-white" : "bg-gray-300"}`}
           >
@@ -368,21 +374,41 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       </div>
 
       {/* Header */}
-      <div className="border rounded-lg p-5 shadow">
-        <h1 className="text-xl font-semibold mb-1">{request.title}</h1>
-        <p className="mb-2">{request.description}</p>
-        <p className="text-sm text-gray-600">Business: {request.business} | Priority: {request.priority}</p>
-        <p className="text-sm text-gray-600">
-          Submitted by: {request.submitter_name} ({request.submitter_email})
-        </p>
-        <p className="text-sm text-gray-600">Submitted at: {new Date(request.created_at).toLocaleString()}</p>
-        {request.completed_at && (
-          <>
-            <p className="text-sm text-gray-600">Completed at: {new Date(request.completed_at).toLocaleString()}</p>
-            <p className="text-sm italic">Completion Notes: {request.completion_note || "—"}</p>
-          </>
+      <div className="border rounded-lg p-5 shadow space-y-3">
+        <div>
+          <h1 className="text-xl font-semibold mb-1">{request.title}</h1>
+          <p className="mb-2">{request.description}</p>
+          <p className="text-sm text-gray-600">Business: {request.business} | Priority: {request.priority}</p>
+          <p className="text-sm text-gray-600">
+            Submitted by: {request.submitter_name} ({request.submitter_email})
+          </p>
+          <p className="text-sm text-gray-600">Submitted at: {new Date(request.created_at).toLocaleString()}</p>
+          {request.completed_at && (
+            <>
+              <p className="text-sm text-gray-600">Completed at: {new Date(request.completed_at).toLocaleString()}</p>
+              <p className="text-sm italic">Completion Notes: {request.completion_note || "—"}</p>
+            </>
+          )}
+          {statusError && <p className="text-sm text-red-600 mt-2">{statusError}</p>}
+        </div>
+
+        {/* NEW: Request-level attachments gallery */}
+        {requestFiles.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2">Attachments</h3>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+              {requestFiles.map((f) => (
+                <a key={f.id} href={f.url} target="_blank" rel="noreferrer">
+                  <img
+                    src={f.url}
+                    alt="attachment"
+                    className="w-full h-24 object-cover rounded border"
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
         )}
-        {statusError && <p className="text-sm text-red-600 mt-2">{statusError}</p>}
       </div>
 
       {/* Notes */}
@@ -440,7 +466,12 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
                   type="file"
                   accept="image/*"
                   multiple
-                  onChange={onChooseNoteFiles}
+                  onChange={(e) => {
+                    const chosen = Array.from(e.target.files || []);
+                    const capped = chosen.slice(0, MAX_FILES);
+                    setNoteFiles(capped);
+                    setNotePreviews(capped.map((f) => URL.createObjectURL(f)));
+                  }}
                   className="block"
                 />
                 <p className="text-xs text-gray-500 mt-1">

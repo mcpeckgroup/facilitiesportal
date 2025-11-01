@@ -17,7 +17,7 @@ type WorkOrder = {
   created_at: string;
   completed_at: string | null;
   completion_note: string | null;
-  request_number?: number; // keep request number
+  request_number?: number;
 };
 
 type WorkOrderNote = {
@@ -130,7 +130,6 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   }, [id]);
 
   const isOpen = useMemo(() => request?.status === "open", [request]);
-  const isCompleted = !isOpen;
 
   function validateEmail(email: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
@@ -299,17 +298,15 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
     return (
       <div className="p-6">
         <div className="mb-6 flex space-x-4 no-print">
-          <Link href="/requests" className="px-4 py-2 bg-gray-300 rounded">
-            Open Requests
-          </Link>
-          <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">
-            Completed Requests
-          </Link>
+          <Link href="/requests" className="px-4 py-2 bg-gray-300 rounded">Open Requests</Link>
+          <Link href="/requests/completed" className="px-4 py-2 bg-gray-300 rounded">Completed Requests</Link>
         </div>
         <p className="text-sm text-red-600">Request not found.</p>
       </div>
     );
   }
+
+  const isCompleted = !isOpen;
 
   return (
     <div className="p-6 space-y-6" id="print-root">
@@ -318,26 +315,35 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         <div className="flex space-x-4">
           <Link
             href="/requests"
-            className={`px-4 py-2 rounded ${request.status === "open" ? "bg-blue-600 text-white" : "bg-gray-300"}`}
+            className={`px-4 py-2 rounded ${isOpen ? "bg-blue-600 text-white" : "bg-gray-300"}`}
           >
             Open Requests
           </Link>
           <Link
             href="/requests/completed"
-            className={`px-4 py-2 rounded ${request.status === "completed" ? "bg-blue-600 text-white" : "bg-gray-300"}`}
+            className={`px-4 py-2 rounded ${isCompleted ? "bg-blue-600 text-white" : "bg-gray-300"}`}
           >
             Completed Requests
           </Link>
         </div>
 
         <div className="flex items-center gap-3">
-          {request.status === "open" ? (
+          {isOpen ? (
             <Link href="/requests" className="px-4 py-2 bg-gray-200 rounded border">← Back to Open</Link>
           ) : (
             <Link href="/requests/completed" className="px-4 py-2 bg-gray-200 rounded border">← Back to Completed</Link>
           )}
 
-          {request.status === "open" ? (
+          {/* Print button now shown for both open and completed */}
+          <button
+            onClick={handlePrint}
+            className="px-4 py-2 bg-gray-800 text-white rounded"
+            title="Print this request"
+          >
+            Print
+          </button>
+
+          {isOpen ? (
             <button
               onClick={handleMarkCompleted}
               disabled={completing}
@@ -346,23 +352,13 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
               {completing ? "Completing…" : "Mark as Completed"}
             </button>
           ) : (
-            <>
-              <button
-                onClick={handleReopen}
-                disabled={reopening}
-                className="px-4 py-2 bg-yellow-600 text-white rounded disabled:opacity-60"
-              >
-                {reopening ? "Reopening…" : "Reopen Request"}
-              </button>
-              {/* New: Print button (only shown on completed) */}
-              <button
-                onClick={handlePrint}
-                className="px-4 py-2 bg-gray-800 text-white rounded"
-                title="Print this request"
-              >
-                Print
-              </button>
-            </>
+            <button
+              onClick={handleReopen}
+              disabled={reopening}
+              className="px-4 py-2 bg-yellow-600 text-white rounded disabled:opacity-60"
+            >
+              {reopening ? "Reopening…" : "Reopen Request"}
+            </button>
           )}
         </div>
       </div>
@@ -414,7 +410,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         <div className="border rounded-lg p-5 shadow no-print">
           <h2 className="font-semibold mb-3">Add Ongoing Note</h2>
 
-          {request.status === "open" ? (
+          {isOpen ? (
             <form onSubmit={handleAddNote} className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-1">
@@ -526,7 +522,6 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             box-shadow: none !important;
             border-color: #ddd !important;
           }
-          /* Fit images nicely on paper */
           img { page-break-inside: avoid; }
           a { color: inherit; text-decoration: none; }
         }

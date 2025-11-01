@@ -15,6 +15,7 @@ type WorkOrder = {
   created_at: string;
   completed_at: string | null;
   completion_note: string | null;
+  request_number?: number; // NEW: request number assigned by DB
 };
 
 const MAX_FILES = 6;
@@ -50,8 +51,9 @@ export default function NewRequestPage() {
 
   function onChooseFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(e.target.files || []);
-    setFiles(chosen.slice(0, MAX_FILES));
-    setPreviews(chosen.slice(0, MAX_FILES).map((f) => URL.createObjectURL(f)));
+    const capped = chosen.slice(0, MAX_FILES);
+    setFiles(capped);
+    setPreviews(capped.map((f) => URL.createObjectURL(f)));
   }
 
   function sanitizeFilename(name: string) {
@@ -77,14 +79,12 @@ export default function NewRequestPage() {
         const url = pub?.publicUrl || "";
         if (!url) throw new Error("Could not get public URL");
 
-        const { error: rowErr } = await supabase
-          .from("work_order_files")
-          .insert({
-            work_order_id: workOrderId,
-            note_id: null,
-            path: key,
-            url,
-          });
+        const { error: rowErr } = await supabase.from("work_order_files").insert({
+          work_order_id: workOrderId,
+          note_id: null,
+          path: key,
+          url,
+        });
         if (rowErr) throw new Error(rowErr.message);
         return url;
       })
@@ -93,7 +93,7 @@ export default function NewRequestPage() {
     const failed = uploads.filter((u) => u.status === "rejected");
     if (failed.length) {
       console.warn("Some files failed to upload:", failed);
-      // We won’t block the request creation if a couple images fail.
+      // Don't block creation if some uploads fail.
     }
   }
 
@@ -116,7 +116,7 @@ export default function NewRequestPage() {
 
     setSubmitting(true);
 
-    // 1) Create the work order
+    // 1) Insert the work order — DB assigns request_number
     const payload = {
       title,
       description,
@@ -135,19 +135,19 @@ export default function NewRequestPage() {
       return;
     }
 
-    // 2) Upload images (non-blocking if some fail)
+    // 2) Upload images (if any)
     try {
       await uploadAttachments(data.id);
     } catch (e: any) {
       console.warn("Attachment upload error:", e?.message || e);
     }
 
-    // 3) Fire-and-forget email notification
+    // 3) Fire-and-forget email notification (includes request_number if present)
     try {
       await fetch("/api/notify-new-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record: data }),
+        body: JSON.stringify({ record: data as WorkOrder }),
       });
     } catch {}
 
@@ -243,13 +243,7 @@ export default function NewRequestPage() {
         {/* Images */}
         <div>
           <label className="block text-sm font-medium mb-1">Attach Photos</label>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={onChooseFiles}
-            className="block"
-          />
+          <input type="file" accept="image/*" multiple onChange={onChooseFiles} className="block" />
           <p className="text-xs text-gray-500 mt-1">
             Up to {MAX_FILES} images. JPG/PNG/WEBP. Max {MAX_MB} MB each.
           </p>
@@ -264,11 +258,7 @@ export default function NewRequestPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60"
-        >
+        <button type="submit" disabled={submitting} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
           {submitting ? "Submitting…" : "Submit Request"}
         </button>
       </form>

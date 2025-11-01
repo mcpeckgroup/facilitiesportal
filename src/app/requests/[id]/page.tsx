@@ -28,27 +28,42 @@ type WorkOrderNote = {
   created_at: string;
 };
 
+type WorkOrderFile = {
+  id: string;
+  work_order_id: string | null;
+  note_id: string | null;
+  path: string;
+  url: string;
+  created_at: string;
+};
+
+const MAX_FILES = 6;
+const MAX_MB = 5;
+const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
 export default function RequestDetailPage({ params }: { params: { id: string } }) {
   const id = params.id;
   const router = useRouter();
 
   const [request, setRequest] = useState<WorkOrder | null>(null);
   const [notes, setNotes] = useState<WorkOrderNote[]>([]);
+  const [filesByNote, setFilesByNote] = useState<Record<string, WorkOrderFile[]>>({});
   const [loading, setLoading] = useState(true);
 
-  // Ongoing note form (all required)
+  // Add note form state
   const [noteBody, setNoteBody] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [authorEmail, setAuthorEmail] = useState("");
+  const [noteFiles, setNoteFiles] = useState<File[]>([]);
+  const [notePreviews, setNotePreviews] = useState<string[]>([]);
   const [submittingNote, setSubmittingNote] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Complete / Reopen state
+  // Status actions
   const [completing, setCompleting] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
 
-  // Fetch request + notes
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -60,18 +75,36 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
           .eq("work_order_id", id)
           .order("created_at", { ascending: false }),
       ]);
+
       if (!cancelled) {
         if (!reqErr) setRequest(req as WorkOrder);
         if (!ntsErr && nts) setNotes(nts as WorkOrderNote[]);
-        setLoading(false);
       }
+
+      // Load all files for this request (both request-level and note-level)
+      const { data: files } = await supabase
+        .from("work_order_files")
+        .select("*")
+        .eq("work_order_id", id)
+        .order("created_at", { ascending: false });
+
+      if (!cancelled && files) {
+        const map: Record<string, WorkOrderFile[]> = {};
+        for (const f of files as WorkOrderFile[]) {
+          if (!f.note_id) continue;
+          if (!map[f.note_id]) map[f.note_id] = [];
+          map[f.note_id].push(f);
+        }
+        setFilesByNote(map);
+      }
+      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
   }, [id]);
 
-  // Realtime: receive new notes for this work order
+  // Realtime: new notes
   useEffect(() => {
     const channel = supabase
       .channel(`notes-${id}`)
@@ -95,6 +128,26 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
   }
 
+  function sanitizeFilename(name: string) {
+    return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  }
+
+  function onChooseNoteFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(e.target.files || []);
+    const capped = chosen.slice(0, MAX_FILES);
+    setNoteFiles(capped);
+    setNotePreviews(capped.map((f) => URL.createObjectURL(f)));
+  }
+
+  const filesError = useMemo(() => {
+    if (noteFiles.length > MAX_FILES) return `Please select up to ${MAX_FILES} images.`;
+    for (const f of noteFiles) {
+      if (!ALLOWED.includes(f.type)) return "Only JPG, PNG, or WEBP images are allowed.";
+      if (f.size > MAX_MB * 1024 * 1024) return `Each file must be ≤ ${MAX_MB} MB.`;
+    }
+    return null;
+  }, [noteFiles]);
+
   async function handleAddNote(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -111,25 +164,89 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       setFormError("Please enter a valid email address.");
       return;
     }
+    if (filesError) {
+      setFormError(filesError);
+      return;
+    }
 
     setSubmittingNote(true);
-    const { data, error } = await supabase
+
+    // 1) Insert note
+    const { data: noteRow, error: noteErr } = await supabase
       .from("work_order_notes")
       .insert({ work_order_id: id, body, author_name: name, author_email: email })
       .select("*")
       .single();
-    setSubmittingNote(false);
 
-    if (error) {
-      setFormError(error.message || "Failed to add note.");
+    if (noteErr || !noteRow) {
+      setSubmittingNote(false);
+      setFormError(noteErr?.message || "Failed to add note.");
       return;
     }
 
-    if (data) {
-      setNotes((prev) => [data as WorkOrderNote, ...prev].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)));
-      setNoteBody("");
-      // keep name/email for convenience
+    // 2) Upload images for this note (optional)
+    try {
+      if (noteFiles.length) {
+        const bucket = supabase.storage.from("work_order_uploads");
+        const uploads = await Promise.allSettled(
+          noteFiles.map(async (file) => {
+            const key = `notes/${noteRow.id}/${Date.now()}-${sanitizeFilename(file.name)}`;
+            const { error: upErr } = await bucket.upload(key, file, {
+              cacheControl: "3600",
+              upsert: false,
+              contentType: file.type,
+            });
+            if (upErr) throw new Error(upErr.message);
+
+            const { data: pub } = bucket.getPublicUrl(key);
+            const url = pub?.publicUrl || "";
+            if (!url) throw new Error("Could not get public URL");
+
+            const { error: rowErr } = await supabase
+              .from("work_order_files")
+              .insert({
+                work_order_id: id,
+                note_id: noteRow.id,
+                path: key,
+                url,
+              });
+            if (rowErr) throw new Error(rowErr.message);
+            return { key, url };
+          })
+        );
+
+        // Merge into UI map for this note
+        const okFiles: WorkOrderFile[] = uploads
+          .filter((u): u is PromiseFulfilledResult<{ key: string; url: string }> => u.status === "fulfilled")
+          .map((u) => ({
+            id: crypto.randomUUID(),
+            work_order_id: id,
+            note_id: noteRow.id,
+            path: u.value.key,
+            url: u.value.url,
+            created_at: new Date().toISOString(),
+          }));
+
+        setFilesByNote((prev) => ({
+          ...prev,
+          [noteRow.id]: [...(prev[noteRow.id] || []), ...okFiles],
+        }));
+
+        const failures = uploads.filter((u) => u.status === "rejected");
+        if (failures.length) {
+          console.warn("Some images failed to upload:", failures);
+        }
+      }
+    } catch (e: any) {
+      console.warn("Attachment upload error:", e?.message || e);
     }
+
+    // 3) Update local notes list
+    setNotes((prev) => [noteRow as WorkOrderNote, ...prev]);
+    setNoteBody("");
+    setNoteFiles([]);
+    setNotePreviews([]);
+    setSubmittingNote(false);
   }
 
   async function handleMarkCompleted() {
@@ -142,22 +259,19 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
-        // keep existing completion_note unchanged (null unless you set it elsewhere)
       })
       .eq("id", request.id)
       .select("*")
       .single();
 
     setCompleting(false);
-
     if (error) {
       setStatusError(error.message || "Failed to mark as completed.");
       return;
     }
-
     if (data) {
       setRequest(data as WorkOrder);
-      router.push("/requests/completed"); // go to completed list
+      router.push("/requests/completed");
     }
   }
 
@@ -171,22 +285,19 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       .update({
         status: "open",
         completed_at: null,
-        // preserve completion_note to keep history; it will hide when not completed
       })
       .eq("id", request.id)
       .select("*")
       .single();
 
     setReopening(false);
-
     if (error) {
       setStatusError(error.message || "Failed to reopen request.");
       return;
     }
-
     if (data) {
       setRequest(data as WorkOrder);
-      router.push("/requests"); // go to open list
+      router.push("/requests");
     }
   }
 
@@ -208,6 +319,8 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
     );
   }
 
+  const isCompleted = !isOpen;
+
   return (
     <div className="p-6 space-y-6">
       {/* Tabs + Back + Action */}
@@ -221,21 +334,19 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
           </Link>
           <Link
             href="/requests/completed"
-            className={`px-4 py-2 rounded ${!isOpen ? "bg-blue-600 text-white" : "bg-gray-300"}`}
+            className={`px-4 py-2 rounded ${isCompleted ? "bg-blue-600 text-white" : "bg-gray-300"}`}
           >
             Completed Requests
           </Link>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Back to the correct list */}
           {isOpen ? (
             <Link href="/requests" className="px-4 py-2 bg-gray-200 rounded border">← Back to Open</Link>
           ) : (
             <Link href="/requests/completed" className="px-4 py-2 bg-gray-200 rounded border">← Back to Completed</Link>
           )}
 
-          {/* Action button */}
           {isOpen ? (
             <button
               onClick={handleMarkCompleted}
@@ -322,6 +433,28 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
                 </div>
               </div>
 
+              {/* Images for the note */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Attach Photos</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={onChooseNoteFiles}
+                  className="block"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Up to {MAX_FILES} images. JPG/PNG/WEBP. Max {MAX_MB} MB each.
+                </p>
+                {notePreviews.length > 0 && (
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {notePreviews.map((src, i) => (
+                      <img key={i} src={src} alt={`preview ${i + 1}`} className="w-full h-24 object-cover rounded border" />
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {formError && <p className="text-sm text-red-600">{formError}</p>}
 
               <button
@@ -337,18 +470,34 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
           )}
         </div>
 
-        {/* Notes list */}
+        {/* Notes list with images */}
         <div className="border rounded-lg p-5 shadow">
           <h2 className="font-semibold mb-3">Ongoing Notes ({notes.length})</h2>
           <div className="space-y-3">
-            {notes.map((n) => (
-              <div key={n.id} className="border rounded p-3">
-                <p className="whitespace-pre-wrap">{n.body}</p>
-                <p className="text-xs text-gray-600 mt-2">
-                  — {n.author_name} ({n.author_email}) • {new Date(n.created_at).toLocaleString()}
-                </p>
-              </div>
-            ))}
+            {notes.map((n) => {
+              const imgs = filesByNote[n.id] || [];
+              return (
+                <div key={n.id} className="border rounded p-3">
+                  <p className="whitespace-pre-wrap">{n.body}</p>
+                  {imgs.length > 0 && (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {imgs.map((f) => (
+                        <a key={f.id} href={f.url} target="_blank" rel="noreferrer">
+                          <img
+                            src={f.url}
+                            alt="attachment"
+                            className="w-full h-24 object-cover rounded border"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-600 mt-2">
+                    — {n.author_name} ({n.author_email}) • {new Date(n.created_at).toLocaleString()}
+                  </p>
+                </div>
+              );
+            })}
             {notes.length === 0 && <p className="text-sm text-gray-500">No notes yet.</p>}
           </div>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 type WorkOrder = {
@@ -17,6 +17,10 @@ type WorkOrder = {
   completion_note: string | null;
 };
 
+const MAX_FILES = 6;
+const MAX_MB = 5;
+const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
 export default function NewRequestPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -25,11 +29,72 @@ export default function NewRequestPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function isValidEmail(v: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || "").trim());
+  }
+
+  const filesError = useMemo(() => {
+    if (files.length > MAX_FILES) return `Please select up to ${MAX_FILES} images.`;
+    for (const f of files) {
+      if (!ALLOWED.includes(f.type)) return "Only JPG, PNG, or WEBP images are allowed.";
+      if (f.size > MAX_MB * 1024 * 1024) return `Each file must be ≤ ${MAX_MB} MB.`;
+    }
+    return null;
+  }, [files]);
+
+  function onChooseFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(e.target.files || []);
+    setFiles(chosen.slice(0, MAX_FILES));
+    setPreviews(chosen.slice(0, MAX_FILES).map((f) => URL.createObjectURL(f)));
+  }
+
+  function sanitizeFilename(name: string) {
+    return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  }
+
+  async function uploadAttachments(workOrderId: string) {
+    if (!files.length) return;
+
+    const bucket = supabase.storage.from("work_order_uploads");
+
+    const uploads = await Promise.allSettled(
+      files.map(async (file) => {
+        const key = `requests/${workOrderId}/${Date.now()}-${sanitizeFilename(file.name)}`;
+        const { error: upErr } = await bucket.upload(key, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type,
+        });
+        if (upErr) throw new Error(upErr.message);
+
+        const { data: pub } = bucket.getPublicUrl(key);
+        const url = pub?.publicUrl || "";
+        if (!url) throw new Error("Could not get public URL");
+
+        const { error: rowErr } = await supabase
+          .from("work_order_files")
+          .insert({
+            work_order_id: workOrderId,
+            note_id: null,
+            path: key,
+            url,
+          });
+        if (rowErr) throw new Error(rowErr.message);
+        return url;
+      })
+    );
+
+    const failed = uploads.filter((u) => u.status === "rejected");
+    if (failed.length) {
+      console.warn("Some files failed to upload:", failed);
+      // We won’t block the request creation if a couple images fail.
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,10 +109,14 @@ export default function NewRequestPage() {
       setError("Please enter a valid email address.");
       return;
     }
+    if (filesError) {
+      setError(filesError);
+      return;
+    }
 
     setSubmitting(true);
 
-    // 1) Create the work order (status must be lowercase "open")
+    // 1) Create the work order
     const payload = {
       title,
       description,
@@ -58,11 +127,7 @@ export default function NewRequestPage() {
       status: "open" as const,
     };
 
-    const { data, error } = await supabase
-      .from("work_orders")
-      .insert(payload)
-      .select("*")
-      .single();
+    const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
 
     if (error || !data) {
       setSubmitting(false);
@@ -70,19 +135,23 @@ export default function NewRequestPage() {
       return;
     }
 
-    // 2) Fire-and-forget email notification (do not block redirect)
+    // 2) Upload images (non-blocking if some fail)
+    try {
+      await uploadAttachments(data.id);
+    } catch (e: any) {
+      console.warn("Attachment upload error:", e?.message || e);
+    }
+
+    // 3) Fire-and-forget email notification
     try {
       await fetch("/api/notify-new-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ record: data }),
       });
-    } catch {
-      // ignore notification errors to keep UX smooth
-    }
+    } catch {}
 
-    // 3) Redirect to the login page (absolute URL)
-    // Use replace so the user can't go Back and resubmit the same form.
+    // 4) Redirect to login
     window.location.replace("https://www.facilitiesportal.com/");
   }
 
@@ -169,6 +238,28 @@ export default function NewRequestPage() {
               required
             />
           </div>
+        </div>
+
+        {/* Images */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Attach Photos</label>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={onChooseFiles}
+            className="block"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Up to {MAX_FILES} images. JPG/PNG/WEBP. Max {MAX_MB} MB each.
+          </p>
+          {previews.length > 0 && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {previews.map((src, i) => (
+                <img key={i} src={src} alt={`preview ${i + 1}`} className="w-full h-24 object-cover rounded border" />
+              ))}
+            </div>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
@@ -13,52 +13,65 @@ type WorkOrder = {
   submitter_name: string;
   submitter_email: string;
   created_at: string;
-};
-
-type WorkOrderNote = {
-  id: string;
-  work_order_id: string;
-  body: string;
-  created_at: string;
+  status: string;
+  request_number?: number; // NEW
 };
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<WorkOrder[]>([]);
-  const [notes, setNotes] = useState<WorkOrderNote[]>([]);
   const [filterBusiness, setFilterBusiness] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
 
+  // initial fetch
   useEffect(() => {
-    async function fetchRequests() {
+    (async () => {
       const { data, error } = await supabase
         .from("work_orders")
         .select("*")
-        .eq("status", "open") // keep lowercase
+        .eq("status", "open")
         .order("created_at", { ascending: false });
-      if (!error && data) setRequests(data);
-    }
-    fetchRequests();
-
-    async function fetchNotes() {
-      const { data, error } = await supabase
-        .from("work_order_notes")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) setNotes(data);
-    }
-    fetchNotes();
+      if (!error && data) setRequests(data as WorkOrder[]);
+    })();
   }, []);
 
-  const filteredRequests = requests.filter((req) => {
-    return (
-      (filterBusiness ? req.business === filterBusiness : true) &&
-      (filterPriority ? req.priority === filterPriority : true)
-    );
-  });
+  // realtime inserts/updates for open
+  useEffect(() => {
+    const channel = supabase
+      .channel("work_orders_open")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "work_orders" },
+        (payload) => {
+          const row = payload.new as WorkOrder;
+          if (!row) return;
 
-  function getNotesForRequest(requestId: string) {
-    return notes.filter((n) => n.work_order_id === requestId);
-  }
+          setRequests((prev) => {
+            // only include open rows here
+            const filtered = prev.filter((r) => r.id !== row.id);
+            if (row.status === "open") {
+              return [row, ...filtered].sort(
+                (a, b) => +new Date(b.created_at) - +new Date(a.created_at)
+              );
+            }
+            return filtered; // remove if it moved to completed
+          });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const filteredRequests = useMemo(
+    () =>
+      requests.filter(
+        (req) =>
+          (filterBusiness ? req.business === filterBusiness : true) &&
+          (filterPriority ? req.priority === filterPriority : true)
+      ),
+    [requests, filterBusiness, filterPriority]
+  );
 
   return (
     <div className="p-6">
@@ -72,11 +85,8 @@ export default function RequestsPage() {
             Completed Requests
           </Link>
         </div>
-        <Link
-          href="/requests/new"
-          className="px-4 py-2 bg-green-600 text-white rounded"
-        >
-          New Request
+        <Link href="/requests/new" className="px-4 py-2 bg-green-600 text-white rounded">
+          + New Request
         </Link>
       </div>
 
@@ -106,39 +116,28 @@ export default function RequestsPage() {
         </select>
       </div>
 
-      {/* List */}
+      {/* Cards */}
       <div className="grid gap-4">
-        {filteredRequests.map((req) => {
-          const reqNotes = getNotesForRequest(req.id);
-          const latestNote = reqNotes[0]?.body ?? null;
-
-          return (
-            <div key={req.id} className="border rounded-lg p-4 shadow">
-              <h2 className="text-lg font-bold">
-                <Link href={`/requests/${req.id}`}>{req.title}</Link>
-              </h2>
-              <p>{req.description}</p>
-              <p className="text-sm text-gray-600">
-                Business: {req.business} | Priority: {req.priority}
-              </p>
-              <p className="text-sm text-gray-600">
-                Submitted by: {req.submitter_name} ({req.submitter_email})
-              </p>
-              <p className="text-sm text-gray-600">
-                Submitted at: {new Date(req.created_at).toLocaleString()}
-              </p>
-              {latestNote && (
-                <p className="text-sm text-blue-700 mt-2 italic">
-                  Latest note: {latestNote.length > 80 ? latestNote.slice(0, 80) + "…" : latestNote}
-                </p>
-              )}
-              <p className="text-xs text-gray-500">Notes: {reqNotes.length}</p>
-            </div>
-          );
-        })}
-        {filteredRequests.length === 0 && (
-          <p className="text-sm text-gray-500">No open requests match your filters.</p>
-        )}
+        {filteredRequests.map((req) => (
+          <div key={req.id} className="border rounded-lg p-4 shadow">
+            <h2 className="text-lg font-bold">
+              <Link href={`/requests/${req.id}`}>
+                {typeof req.request_number === "number" ? `[ #${req.request_number} ] ` : ``}
+                {req.title}
+              </Link>
+            </h2>
+            <p>{req.description}</p>
+            <p className="text-sm text-gray-600">
+              Business: {req.business} | Priority: {req.priority}
+            </p>
+            <p className="text-sm text-gray-600">
+              Submitted by: {req.submitter_name} ({req.submitter_email})
+            </p>
+            <p className="text-sm text-gray-600">
+              Submitted at: {new Date(req.created_at).toLocaleString()}
+            </p>
+          </div>
+        ))}
       </div>
     </div>
   );

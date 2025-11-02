@@ -25,7 +25,6 @@ const MAX_MB = 5;
 const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
 export default function NewRequestPage() {
-  const [companyName, setCompanyName] = useState<string>("");
   const [companyId, setCompanyId] = useState<string>("");
   const [companyLoading, setCompanyLoading] = useState(true);
 
@@ -46,7 +45,6 @@ export default function NewRequestPage() {
       try {
         const c = await getCompany();
         if (cancel) return;
-        setCompanyName(c.name);
         setCompanyId(c.id);
       } catch (e: any) {
         console.error("getCompany failed:", e?.message || e);
@@ -116,16 +114,6 @@ export default function NewRequestPage() {
     if (failed.length) console.warn("Some files failed to upload:", failed);
   }
 
-  async function ensureCompany() {
-    if (!companyId) {
-      const c = await getCompany();
-      setCompanyName(c.name);
-      setCompanyId(c.id);
-      return c.id;
-    }
-    return companyId;
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -142,25 +130,22 @@ export default function NewRequestPage() {
       setError(filesError);
       return;
     }
+    if (!companyId) {
+      setError("Company context missing. Please reload the page and try again.");
+      return;
+    }
 
     setSubmitting(true);
 
     try {
-      const cid = await ensureCompany();
-      if (!cid) {
-        setError("Company context missing. Please reload the page and try again.");
-        return;
-      }
-
       const payload = {
         title,
         description,
-        business: companyName, // still stored/displayed in lists; not editable here
         priority,
         submitter_name: name,
         submitter_email: email,
         status: "open" as const,
-        company_id: cid,
+        company_id: companyId, // business will be set by DB trigger
       };
 
       const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
@@ -225,8 +210,6 @@ export default function NewRequestPage() {
           <textarea className="w-full border rounded p-2 min-h-[120px]" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue/request" required />
         </div>
 
-        {/* Business field removed (auto-set silently) */}
-
         <div>
           <label className="block text-sm font-medium mb-1">Priority</label>
           <select className="w-full border rounded p-2" value={priority} onChange={(e) => setPriority(e.target.value)} required>
@@ -249,7 +232,6 @@ export default function NewRequestPage() {
           </div>
         </div>
 
-        {/* Images */}
         <div>
           <label className="block text-sm font-medium mb-1">Attach Photos</label>
           <input type="file" accept="image/*" multiple onChange={onChooseFiles} className="block" />

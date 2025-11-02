@@ -1,4 +1,5 @@
 // src/app/page.tsx
+import Link from "next/link";
 import TenantHeader from "@/app/_components/TenantHeader";
 
 export default function HomePage() {
@@ -7,13 +8,47 @@ export default function HomePage() {
       {/* Tenant-specific logo/name header */}
       <TenantHeader />
 
-      {/* 👇 Keep your existing home page content inside this container */}
-      <div className="p-6 max-w-5xl mx-auto">
-        {/* TODO: paste your current home page JSX here if this file was empty */}
-        {/* Example (remove if you already have content):
-        <h1 className="text-2xl font-semibold mb-4">Welcome</h1>
-        <p className="text-gray-600">Choose an action from the menu.</p>
-        */}
+      {/* Content container */}
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
+        {/* Action bar */}
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/requests/new"
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white shadow hover:bg-blue-700 transition"
+          >
+            New Request
+          </Link>
+
+          {/* If your login is the subdomain root (/) keep this: */}
+          <Link
+            href="/"
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
+          >
+            Login
+          </Link>
+
+          {/* Optional: quick navigation (remove if you don’t want these on the home page) */}
+          <Link
+            href="/requests"
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-white border shadow hover:bg-gray-50 transition"
+          >
+            Open Requests
+          </Link>
+          <Link
+            href="/requests/completed"
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-white border shadow hover:bg-gray-50 transition"
+          >
+            Completed Requests
+          </Link>
+        </div>
+
+        {/* Your existing home content can stay below (or keep this minimal welcome) */}
+        <section className="mt-2">
+          <h1 className="text-2xl font-semibold mb-2">Welcome</h1>
+          <p className="text-gray-600">
+            Use the buttons above to submit a new facilities request or to log in.
+          </p>
+        </section>
       </div>
     </main>
   );

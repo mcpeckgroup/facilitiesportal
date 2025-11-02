@@ -26,7 +26,9 @@ export async function getCompany(): Promise<{ id: string; slug: string; name: st
     headers: { "x-app-host": window.location.host, "x-app-proto": window.location.protocol },
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Company resolve failed: ${await res.text()}`);
+  if (!res.ok) {
+    throw new Error(`Company resolve failed: ${await res.text()}`);
+  }
   const company = (await res.json()) as { id: string; slug: string; name: string };
   cachedCompany = company;
   return company;

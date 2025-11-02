@@ -26,6 +26,7 @@ const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
 export default function NewRequestPage() {
   const [companyId, setCompanyId] = useState<string>("");
+  const [companySlug, setCompanySlug] = useState<string>("");
   const [companyLoading, setCompanyLoading] = useState(true);
 
   const [title, setTitle] = useState("");
@@ -43,9 +44,10 @@ export default function NewRequestPage() {
     let cancel = false;
     (async () => {
       try {
-        const c = await getCompany();
+        const c = await getCompany(); // expects { id, slug, name }
         if (cancel) return;
         setCompanyId(c.id);
+        setCompanySlug(c.slug);
       } catch (e: any) {
         console.error("getCompany failed:", e?.message || e);
         setError("Could not resolve company from subdomain.");
@@ -114,6 +116,20 @@ export default function NewRequestPage() {
     if (failed.length) console.warn("Some files failed to upload:", failed);
   }
 
+  function computeHomeUrl(): string {
+    const { protocol, hostname } = window.location;
+    // If already on a company subdomain under facilitiesportal.com, go to "/"
+    if (hostname.endsWith(".facilitiesportal.com") && !hostname.startsWith("www.")) {
+      return `${protocol}//${hostname}/`;
+    }
+    // Otherwise (apex or vercel preview), use the resolved slug if available
+    if (companySlug) {
+      return `${protocol}//${companySlug}.facilitiesportal.com/`;
+    }
+    // Fallback: current origin root
+    return `${protocol}//${hostname}/`;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -145,7 +161,7 @@ export default function NewRequestPage() {
         submitter_name: name,
         submitter_email: email,
         status: "open" as const,
-        company_id: companyId, // business will be set by DB trigger
+        company_id: companyId, // DB trigger sets `business`
       };
 
       const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
@@ -167,9 +183,13 @@ export default function NewRequestPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ record: data as WorkOrder }),
         });
-      } catch {}
+      } catch {
+        // non-blocking
+      }
 
-      window.location.replace("https://www.facilitiesportal.com/");
+      // ✅ Redirect to the company-specific home page
+      const home = computeHomeUrl();
+      window.location.replace(home);
     } catch (e: any) {
       console.error(e);
       setError(e?.message || "Unexpected error while submitting.");
@@ -232,6 +252,7 @@ export default function NewRequestPage() {
           </div>
         </div>
 
+        {/* Images */}
         <div>
           <label className="block text-sm font-medium mb-1">Attach Photos</label>
           <input type="file" accept="image/*" multiple onChange={onChooseFiles} className="block" />

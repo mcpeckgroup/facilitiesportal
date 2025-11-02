@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       return new Response(
         JSON.stringify({
           error: "No slug provided and no subdomain detected",
-          hint: "Add ?slug=pharmetriclab or visit a subdomain like pharmetriclab.facilitiesportal.com"
+          hint: "Add ?slug=pharmetriclab or visit a subdomain like pharmetriclab.facilitiesportal.com",
         }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );

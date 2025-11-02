@@ -35,11 +35,11 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* Minimal Facilitiesportal */}
+        {/* Minimal welcome */}
         <section className="mt-2">
           <h1 className="text-2xl font-semibold mb-2">Welcome</h1>
           <p className="text-gray-600">
-            Submit a new facilities request or log in.
+            Use the buttons above to submit a new facilities request or to log in.
           </p>
         </section>
       </div>

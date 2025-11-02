@@ -10,7 +10,7 @@ export default function HomePage() {
 
       {/* Content container */}
       <div className="p-6 max-w-5xl mx-auto space-y-6">
-        {/* Action bar */}
+        {/* Action bar (New Request + Login only) */}
         <div className="flex flex-wrap gap-3">
           <Link
             href="/requests/new"
@@ -19,30 +19,16 @@ export default function HomePage() {
             New Request
           </Link>
 
-          {/* If your login is the subdomain root (/) keep this: */}
+          {/* If your login is the subdomain root, keep href="/" */}
           <Link
             href="/"
             className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
           >
             Login
           </Link>
-
-          {/* Optional: quick navigation (remove if you don’t want these on the home page) */}
-          <Link
-            href="/requests"
-            className="inline-flex items-center px-4 py-2 rounded-lg bg-white border shadow hover:bg-gray-50 transition"
-          >
-            Open Requests
-          </Link>
-          <Link
-            href="/requests/completed"
-            className="inline-flex items-center px-4 py-2 rounded-lg bg-white border shadow hover:bg-gray-50 transition"
-          >
-            Completed Requests
-          </Link>
         </div>
 
-        {/* Your existing home content can stay below (or keep this minimal welcome) */}
+        {/* Minimal welcome (keep or replace with your own content) */}
         <section className="mt-2">
           <h1 className="text-2xl font-semibold mb-2">Welcome</h1>
           <p className="text-gray-600">

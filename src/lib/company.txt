@@ -1,0 +1,37 @@
+// src/lib/company.ts
+let cachedCompany: { id: string; slug: string; name: string } | null = null;
+
+function hostToSlug(host: string): string | null {
+  try {
+    const h = (host || "").toLowerCase();
+    const parts = h.split(".");
+    if (parts.length >= 3) {
+      if (parts[0] === "www") return parts[1];
+      return parts[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getCompany(): Promise<{ id: string; slug: string; name: string }> {
+  if (cachedCompany) return cachedCompany;
+
+  const url = new URL(window.location.href);
+  const urlSlug = url.searchParams.get("slug");
+
+  const res = await fetch(`/api/company/by-host${urlSlug ? `?slug=${encodeURIComponent(urlSlug)}` : ""}`, {
+    method: "GET",
+    headers: { "x-app-host": window.location.host, "x-app-proto": window.location.protocol },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Company resolve failed: ${await res.text()}`);
+  const company = (await res.json()) as { id: string; slug: string; name: string };
+  cachedCompany = company;
+  return company;
+}
+
+export function extractSlugFromHost(host: string): string | null {
+  return hostToSlug(host);
+}

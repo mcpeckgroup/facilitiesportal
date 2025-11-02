@@ -14,12 +14,14 @@
     "jsx": "preserve",
     "incremental": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["next-env.d.ts", "src/**/*"],
   "exclude": [
     "node_modules",
     ".next",
-    "supabase/functions"   // exclude Deno runtime code from Next TS build
+    "supabase/functions"
   ]
 }

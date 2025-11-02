@@ -79,11 +79,7 @@ export default function RequestsPage() {
       </div>
 
       <div className="flex space-x-4 mb-6">
-        {/* Business filter preserved for layout; locked to the company */}
-        <select value={companyName} disabled className="border p-2 rounded bg-gray-100 text-gray-700">
-          <option value={companyName}>{companyName || "Business"}</option>
-        </select>
-
+        {/* Business filter removed; keep Priority filter to preserve layout spacing */}
         <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="border p-2 rounded">
           <option value="">All Priorities</option>
           <option value="emergency">Emergency</option>

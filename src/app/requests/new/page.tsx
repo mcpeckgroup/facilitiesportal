@@ -40,7 +40,6 @@ export default function NewRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load company context once
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -118,7 +117,6 @@ export default function NewRequestPage() {
   }
 
   async function ensureCompany() {
-    // If for some reason companyId didn’t set yet, try once more
     if (!companyId) {
       const c = await getCompany();
       setCompanyName(c.name);
@@ -126,7 +124,7 @@ export default function NewRequestPage() {
       return c.id;
     }
     return companyId;
-    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -157,7 +155,7 @@ export default function NewRequestPage() {
       const payload = {
         title,
         description,
-        business: companyName, // visual; DB trigger will also sync from company_id
+        business: companyName, // still stored/displayed in lists; not editable here
         priority,
         submitter_name: name,
         submitter_email: email,
@@ -184,11 +182,8 @@ export default function NewRequestPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ record: data as WorkOrder }),
         });
-      } catch (e) {
-        console.warn("Notify email failed (non-blocking).");
-      }
+      } catch {}
 
-      // redirect to login, per your requirement
       window.location.replace("https://www.facilitiesportal.com/");
     } catch (e: any) {
       console.error(e);
@@ -230,12 +225,7 @@ export default function NewRequestPage() {
           <textarea className="w-full border rounded p-2 min-h-[120px]" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue/request" required />
         </div>
 
-        {/* Business: read-only, auto from subdomain */}
-        <div>
-          <label className="block text-sm font-medium mb-1">Business</label>
-          <input className="w-full border rounded p-2 bg-gray-100" value={companyName || ""} disabled />
-          <p className="text-xs text-gray-500 mt-1">Automatically set based on the portal subdomain.</p>
-        </div>
+        {/* Business field removed (auto-set silently) */}
 
         <div>
           <label className="block text-sm font-medium mb-1">Priority</label>
@@ -273,7 +263,7 @@ export default function NewRequestPage() {
           )}
         </div>
 
-        <button type="submit" className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
+        <button type="submit" className="px-4 py-2 rounded bg-blue-600 text-white">
           {submitting ? "Submitting…" : "Submit Request"}
         </button>
       </form>

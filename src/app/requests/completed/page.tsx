@@ -22,34 +22,37 @@ type WorkOrder = {
 };
 
 export default function CompletedRequestsPage() {
+  const [companyName, setCompanyName] = useState("");
+  const [companyId, setCompanyId] = useState<string>("");
   const [requests, setRequests] = useState<WorkOrder[]>([]);
-  const [filterBusiness, setFilterBusiness] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
     (async () => {
-      const company = await getCompany();
-      const { data, error } = await supabase
+      const c = await getCompany();
+      if (cancel) return;
+      setCompanyName(c.name);
+      setCompanyId(c.id);
+
+      const { data } = await supabase
         .from("work_orders")
         .select("*")
         .eq("status", "completed")
-        .eq("company_id", company.id)
+        .eq("company_id", c.id)
         .order("completed_at", { ascending: false });
-      if (!cancelled && !error && data) setRequests(data as WorkOrder[]);
+      if (!cancel && data) setRequests(data as WorkOrder[]);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancel = true; };
   }, []);
 
   useEffect(() => {
+    if (!companyId) return;
     const channel = supabase
       .channel("work_orders_completed_multi")
-      .on("postgres_changes", { event: "*", schema: "public", table: "work_orders" }, async (payload) => {
-        const company = await getCompany();
+      .on("postgres_changes", { event: "*", schema: "public", table: "work_orders" }, (payload) => {
         const row = payload.new as WorkOrder;
-        if (!row || row.company_id !== company.id) return;
+        if (!row || row.company_id !== companyId) return;
         setRequests((prev) => {
           const without = prev.filter((r) => r.id !== row.id);
           if (row.status === "completed") {
@@ -63,17 +66,12 @@ export default function CompletedRequestsPage() {
         });
       })
       .subscribe();
-    return () => void supabase.removeChannel(channel);
-  }, []);
+    return () => { supabase.removeChannel(channel); };
+  }, [companyId]);
 
   const filteredRequests = useMemo(
-    () =>
-      requests.filter(
-        (req) =>
-          (filterBusiness ? req.business === filterBusiness : true) &&
-          (filterPriority ? req.priority === filterPriority : true)
-      ),
-    [requests, filterBusiness, filterPriority]
+    () => requests.filter((req) => (filterPriority ? req.priority === filterPriority : true)),
+    [requests, filterPriority]
   );
 
   async function handleDelete(id: string) {
@@ -92,11 +90,9 @@ export default function CompletedRequestsPage() {
       </div>
 
       <div className="flex space-x-4 mb-6">
-        <select value={filterBusiness} onChange={(e) => setFilterBusiness(e.target.value)} className="border p-2 rounded">
-          <option value="">All Businesses</option>
-          <option value="Infuserve America">Infuserve America</option>
-          <option value="Pharmetric">Pharmetric</option>
-          <option value="Issak">Issak</option>
+        {/* Business filter kept for layout; locked to company */}
+        <select value={companyName} disabled className="border p-2 rounded bg-gray-100 text-gray-700">
+          <option value={companyName}>{companyName || "Business"}</option>
         </select>
 
         <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)} className="border p-2 rounded">
@@ -121,12 +117,8 @@ export default function CompletedRequestsPage() {
             <p className="text-sm text-gray-600">Business: {req.business} | Priority: {req.priority}</p>
             <p className="text-sm text-gray-600">Submitted by: {req.submitter_name} ({req.submitter_email})</p>
             <p className="text-sm text-gray-600">Submitted at: {new Date(req.created_at).toLocaleString()}</p>
-            {req.completed_at && (
-              <p className="text-sm text-gray-600">Completed at: {new Date(req.completed_at).toLocaleString()}</p>
-            )}
-            <button onClick={() => handleDelete(req.id)} className="mt-2 px-3 py-1 bg-red-600 text-white rounded">
-              Delete
-            </button>
+            {req.completed_at && <p className="text-sm text-gray-600">Completed at: {new Date(req.completed_at).toLocaleString()}</p>}
+            <button onClick={() => handleDelete(req.id)} className="mt-2 px-3 py-1 bg-red-600 text-white rounded">Delete</button>
           </div>
         ))}
       </div>

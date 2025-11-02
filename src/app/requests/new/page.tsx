@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { getCompany } from "@/lib/company";
 
@@ -25,18 +25,27 @@ const MAX_MB = 5;
 const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
 export default function NewRequestPage() {
+  const [companyName, setCompanyName] = useState<string>("");
+  const [companyId, setCompanyId] = useState<string>("");
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [business, setBusiness] = useState("");
   const [priority, setPriority] = useState<WorkOrder["priority"]>("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const c = await getCompany();
+      setCompanyName(c.name);
+      setCompanyId(c.id);
+    })();
+  }, []);
 
   function isValidEmail(v: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || "").trim());
@@ -62,7 +71,7 @@ export default function NewRequestPage() {
     return name.replace(/[^a-zA-Z0-9._-]/g, "_");
   }
 
-  async function uploadAttachments(workOrderId: string, companyId: string) {
+  async function uploadAttachments(workOrderId: string) {
     if (!files.length) return;
     const bucket = supabase.storage.from("work_order_uploads");
 
@@ -100,7 +109,7 @@ export default function NewRequestPage() {
     e.preventDefault();
     setError(null);
 
-    if (!title || !description || !business || !priority || !name || !email) {
+    if (!title || !description || !priority || !name || !email) {
       setError("Please fill in all fields.");
       return;
     }
@@ -112,21 +121,23 @@ export default function NewRequestPage() {
       setError(filesError);
       return;
     }
+    if (!companyId) {
+      setError("Company context missing.");
+      return;
+    }
 
     setSubmitting(true);
 
     try {
-      const company = await getCompany();
-
       const payload = {
         title,
         description,
-        business,
+        business: companyName, // shown immediately; DB trigger will also sync from company_id
         priority,
         submitter_name: name,
         submitter_email: email,
         status: "open" as const,
-        company_id: company.id,
+        company_id: companyId,
       };
 
       const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
@@ -136,7 +147,7 @@ export default function NewRequestPage() {
       }
 
       try {
-        await uploadAttachments(data.id, company.id);
+        await uploadAttachments(data.id);
       } catch (e: any) {
         console.warn("Attachment upload error:", e?.message || e);
       }
@@ -162,81 +173,40 @@ export default function NewRequestPage() {
       <form onSubmit={handleSubmit} className="space-y-4 border rounded-xl p-5 shadow">
         <div>
           <label className="block text-sm font-medium mb-1">Title</label>
-          <input
-            className="w-full border rounded p-2"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Short title"
-            required
-          />
+          <input className="w-full border rounded p-2" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short title" required />
         </div>
 
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
-          <textarea
-            className="w-full border rounded p-2 min-h-[120px]"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe the issue/request"
-            required
-          />
+          <textarea className="w-full border rounded p-2 min-h-[120px]" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue/request" required />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Business</label>
-            <select
-              className="w-full border rounded p-2"
-              value={business}
-              onChange={(e) => setBusiness(e.target.value)}
-              required
-            >
-              <option value="">Select business</option>
-              <option value="Infuserve America">Infuserve America</option>
-              <option value="Pharmetric">Pharmetric</option>
-              <option value="Issak">Issak</option>
-            </select>
-          </div>
+        {/* Business: read-only, auto from subdomain */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Business</label>
+          <input className="w-full border rounded p-2 bg-gray-100" value={companyName || ""} disabled />
+          <p className="text-xs text-gray-500 mt-1">Automatically set based on the portal subdomain.</p>
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Priority</label>
-            <select
-              className="w-full border rounded p-2"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              required
-            >
-              <option value="">Select priority</option>
-              <option value="emergency">Emergency</option>
-              <option value="urgent">Urgent</option>
-              <option value="non_critical">Non-Critical</option>
-              <option value="routine">Routine</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Priority</label>
+          <select className="w-full border rounded p-2" value={priority} onChange={(e) => setPriority(e.target.value)} required>
+            <option value="">Select priority</option>
+            <option value="emergency">Emergency</option>
+            <option value="urgent">Urgent</option>
+            <option value="non_critical">Non-Critical</option>
+            <option value="routine">Routine</option>
+          </select>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Your Name</label>
-            <input
-              className="w-full border rounded p-2"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Jane Doe"
-              required
-            />
+            <input className="w-full border rounded p-2" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" required />
           </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">Your Email</label>
-            <input
-              type="email"
-              className="w-full border rounded p-2"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="jane@example.com"
-              required
-            />
+            <input type="email" className="w-full border rounded p-2" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" required />
           </div>
         </div>
 
@@ -244,9 +214,7 @@ export default function NewRequestPage() {
         <div>
           <label className="block text-sm font-medium mb-1">Attach Photos</label>
           <input type="file" accept="image/*" multiple onChange={onChooseFiles} className="block" />
-          <p className="text-xs text-gray-500 mt-1">
-            Up to {MAX_FILES} images. JPG/PNG/WEBP. Max {MAX_MB} MB each.
-          </p>
+          <p className="text-xs text-gray-500 mt-1">Up to {MAX_FILES} images. JPG/PNG/WEBP. Max {MAX_MB} MB each.</p>
           {previews.length > 0 && (
             <div className="mt-3 grid grid-cols-3 gap-2">
               {previews.map((src, i) => (
@@ -258,7 +226,7 @@ export default function NewRequestPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button type="submit" disabled={submitting} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
+        <button type="submit" disabled={submitting || !companyId} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
           {submitting ? "Submitting…" : "Submit Request"}
         </button>
       </form>

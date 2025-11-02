@@ -19,20 +19,20 @@ export default function HomePage() {
             New Request
           </Link>
 
-          {/* If your login is the subdomain root, keep href="/" */}
-          <Link
-            href="/"
+          {/* Login goes to the apex login page */}
+          <a
+            href="https://www.facilitiesportal.com/"
             className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
           >
             Login
-          </Link>
+          </a>
         </div>
 
-        {/* Minimal welcome (keep or replace with your own content) */}
+        {/* Minimal Facilitiesportal */}
         <section className="mt-2">
           <h1 className="text-2xl font-semibold mb-2">Welcome</h1>
           <p className="text-gray-600">
-            Use the buttons above to submit a new facilities request or to log in.
+            Submit a new facilities request or log in.
           </p>
         </section>
       </div>

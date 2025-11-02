@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { getCompany } from "@/lib/company";
 
 type WorkOrder = {
   id: string;
@@ -15,7 +16,8 @@ type WorkOrder = {
   created_at: string;
   completed_at: string | null;
   completion_note: string | null;
-  request_number?: number; // NEW: request number assigned by DB
+  request_number?: number;
+  company_id?: string;
 };
 
 const MAX_FILES = 6;
@@ -60,7 +62,7 @@ export default function NewRequestPage() {
     return name.replace(/[^a-zA-Z0-9._-]/g, "_");
   }
 
-  async function uploadAttachments(workOrderId: string) {
+  async function uploadAttachments(workOrderId: string, companyId: string) {
     if (!files.length) return;
 
     const bucket = supabase.storage.from("work_order_uploads");
@@ -84,6 +86,7 @@ export default function NewRequestPage() {
           note_id: null,
           path: key,
           url,
+          company_id: companyId,
         });
         if (rowErr) throw new Error(rowErr.message);
         return url;
@@ -91,10 +94,7 @@ export default function NewRequestPage() {
     );
 
     const failed = uploads.filter((u) => u.status === "rejected");
-    if (failed.length) {
-      console.warn("Some files failed to upload:", failed);
-      // Don't block creation if some uploads fail.
-    }
+    if (failed.length) console.warn("Some files failed to upload:", failed);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -116,43 +116,46 @@ export default function NewRequestPage() {
 
     setSubmitting(true);
 
-    // 1) Insert the work order — DB assigns request_number
-    const payload = {
-      title,
-      description,
-      business,
-      priority,
-      submitter_name: name,
-      submitter_email: email,
-      status: "open" as const,
-    };
+    try {
+      const company = await getCompany();
 
-    const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
+      const payload = {
+        title,
+        description,
+        business,
+        priority,
+        submitter_name: name,
+        submitter_email: email,
+        status: "open" as const,
+        company_id: company.id,
+      };
 
-    if (error || !data) {
+      const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
+      if (error || !data) {
+        setError(error?.message || "Failed to create request.");
+        return;
+      }
+
+      try {
+        await uploadAttachments(data.id, company.id);
+      } catch (e: any) {
+        console.warn("Attachment upload error:", e?.message || e);
+      }
+
+      // Fire-and-forget email (uses request_number if your API route is set up)
+      try {
+        await fetch("/api/notify-new-request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ record: data as WorkOrder }),
+        });
+      } catch {}
+
+      // Redirect to login/home per your spec
+      window.location.replace("https://www.facilitiesportal.com/");
+    } finally {
       setSubmitting(false);
-      setError(error?.message || "Failed to create request.");
-      return;
     }
-
-    // 2) Upload images (if any)
-    try {
-      await uploadAttachments(data.id);
-    } catch (e: any) {
-      console.warn("Attachment upload error:", e?.message || e);
-    }
-
-    // 3) Fire-and-forget email notification (includes request_number if present)
-    try {
-      await fetch("/api/notify-new-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ record: data as WorkOrder }),
-      });
-    } catch {}
-
-    // 4) Redirect to login
-    window.location.replace("https://www.facilitiesportal.com/");
   }
 
   return (

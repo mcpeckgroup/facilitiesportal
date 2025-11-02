@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { getCompany } from "@/lib/company";
 
 type WorkOrder = {
   id: string;
@@ -18,6 +19,7 @@ type WorkOrder = {
   completed_at: string | null;
   completion_note: string | null;
   request_number?: number;
+  company_id?: string;
 };
 
 type WorkOrderNote = {
@@ -27,6 +29,7 @@ type WorkOrderNote = {
   author_name: string;
   author_email: string;
   created_at: string;
+  company_id?: string;
 };
 
 type WorkOrderFile = {
@@ -36,6 +39,7 @@ type WorkOrderFile = {
   path: string;
   url: string;
   created_at: string;
+  company_id?: string;
 };
 
 const MAX_FILES = 6;
@@ -46,13 +50,13 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const id = params.id;
   const router = useRouter();
 
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [request, setRequest] = useState<WorkOrder | null>(null);
   const [notes, setNotes] = useState<WorkOrderNote[]>([]);
   const [filesByNote, setFilesByNote] = useState<Record<string, WorkOrderFile[]>>({});
   const [requestFiles, setRequestFiles] = useState<WorkOrderFile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Add note form state
   const [noteBody, setNoteBody] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [authorEmail, setAuthorEmail] = useState("");
@@ -61,7 +65,6 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   const [submittingNote, setSubmittingNote] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Status actions
   const [completing, setCompleting] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -69,12 +72,17 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const company = await getCompany();
+      if (cancelled) return;
+      setCompanyId(company.id);
+
       const [{ data: req, error: reqErr }, { data: nts, error: ntsErr }] = await Promise.all([
-        supabase.from("work_orders").select("*").eq("id", id).single(),
+        supabase.from("work_orders").select("*").eq("id", id).eq("company_id", company.id).single(),
         supabase
           .from("work_order_notes")
           .select("*")
           .eq("work_order_id", id)
+          .eq("company_id", company.id)
           .order("created_at", { ascending: false }),
       ]);
 
@@ -83,11 +91,11 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         if (!ntsErr && nts) setNotes(nts as WorkOrderNote[]);
       }
 
-      // Load all files for this request
       const { data: files } = await supabase
         .from("work_order_files")
         .select("*")
         .eq("work_order_id", id)
+        .eq("company_id", company.id)
         .order("created_at", { ascending: false });
 
       if (!cancelled && files) {
@@ -111,8 +119,8 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
     };
   }, [id]);
 
-  // Realtime: new notes
   useEffect(() => {
+    if (!companyId) return;
     const channel = supabase
       .channel(`notes-${id}`)
       .on(
@@ -120,16 +128,16 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         { event: "INSERT", schema: "public", table: "work_order_notes", filter: `work_order_id=eq.${id}` },
         (payload) => {
           const row = payload.new as unknown as WorkOrderNote;
+          if (row.company_id !== companyId) return;
           setNotes((prev) => [row, ...prev].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)));
         }
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [id]);
+    return () => void supabase.removeChannel(channel);
+  }, [id, companyId]);
 
   const isOpen = useMemo(() => request?.status === "open", [request]);
+  const isCompleted = !isOpen;
 
   function validateEmail(email: string) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || "").trim());
@@ -175,13 +183,16 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       setFormError(filesError);
       return;
     }
+    if (!companyId) {
+      setFormError("Company context missing.");
+      return;
+    }
 
     setSubmittingNote(true);
 
-    // 1) Insert note
     const { data: noteRow, error: noteErr } = await supabase
       .from("work_order_notes")
-      .insert({ work_order_id: id, body, author_name: name, author_email: email })
+      .insert({ work_order_id: id, body, author_name: name, author_email: email, company_id: companyId })
       .select("*")
       .single();
 
@@ -191,7 +202,6 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       return;
     }
 
-    // 2) Upload images (optional)
     try {
       if (noteFiles.length) {
         const bucket = supabase.storage.from("work_order_uploads");
@@ -211,7 +221,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
 
             const { error: rowErr } = await supabase
               .from("work_order_files")
-              .insert({ work_order_id: id, note_id: noteRow.id, path: key, url });
+              .insert({ work_order_id: id, note_id: noteRow.id, path: key, url, company_id: companyId });
             if (rowErr) throw new Error(rowErr.message);
             return { key, url };
           })
@@ -226,6 +236,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             path: u.value.key,
             url: u.value.url,
             created_at: new Date().toISOString(),
+            company_id: companyId,
           }));
 
         setFilesByNote((prev) => ({
@@ -243,7 +254,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   }
 
   async function handleMarkCompleted() {
-    if (!request || !isOpen) return;
+    if (!request || !isOpen || !companyId) return;
     setStatusError(null);
     setCompleting(true);
 
@@ -251,6 +262,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       .from("work_orders")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", request.id)
+      .eq("company_id", companyId)
       .select("*")
       .single();
 
@@ -266,7 +278,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
   }
 
   async function handleReopen() {
-    if (!request || isOpen) return;
+    if (!request || isOpen || !companyId) return;
     setStatusError(null);
     setReopening(true);
 
@@ -274,6 +286,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
       .from("work_orders")
       .update({ status: "open", completed_at: null })
       .eq("id", request.id)
+      .eq("company_id", companyId)
       .select("*")
       .single();
 
@@ -306,57 +319,36 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
     );
   }
 
-  const isCompleted = !isOpen;
-
   return (
     <div className="p-6 space-y-6" id="print-root">
       {/* Tabs + Back + Actions */}
       <div className="flex items-center justify-between no-print">
         <div className="flex space-x-4">
-          <Link
-            href="/requests"
-            className={`px-4 py-2 rounded ${isOpen ? "bg-blue-600 text-white" : "bg-gray-300"}`}
-          >
+          <Link href="/requests" className={`px-4 py-2 rounded ${request.status === "open" ? "bg-blue-600 text-white" : "bg-gray-300"}`}>
             Open Requests
           </Link>
-          <Link
-            href="/requests/completed"
-            className={`px-4 py-2 rounded ${isCompleted ? "bg-blue-600 text-white" : "bg-gray-300"}`}
-          >
+          <Link href="/requests/completed" className={`px-4 py-2 rounded ${request.status === "completed" ? "bg-blue-600 text-white" : "bg-gray-300"}`}>
             Completed Requests
           </Link>
         </div>
 
         <div className="flex items-center gap-3">
-          {isOpen ? (
+          {request.status === "open" ? (
             <Link href="/requests" className="px-4 py-2 bg-gray-200 rounded border">← Back to Open</Link>
           ) : (
             <Link href="/requests/completed" className="px-4 py-2 bg-gray-200 rounded border">← Back to Completed</Link>
           )}
 
-          {/* Print button now shown for both open and completed */}
-          <button
-            onClick={handlePrint}
-            className="px-4 py-2 bg-gray-800 text-white rounded"
-            title="Print this request"
-          >
+          <button onClick={handlePrint} className="px-4 py-2 bg-gray-800 text-white rounded" title="Print this request">
             Print
           </button>
 
-          {isOpen ? (
-            <button
-              onClick={handleMarkCompleted}
-              disabled={completing}
-              className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60"
-            >
+          {request.status === "open" ? (
+            <button onClick={handleMarkCompleted} disabled={completing} className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60">
               {completing ? "Completing…" : "Mark as Completed"}
             </button>
           ) : (
-            <button
-              onClick={handleReopen}
-              disabled={reopening}
-              className="px-4 py-2 bg-yellow-600 text-white rounded disabled:opacity-60"
-            >
+            <button onClick={handleReopen} disabled={reopening} className="px-4 py-2 bg-yellow-600 text-white rounded disabled:opacity-60">
               {reopening ? "Reopening…" : "Reopen Request"}
             </button>
           )}
@@ -392,11 +384,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
               {requestFiles.map((f) => (
                 <a key={f.id} href={f.url} target="_blank" rel="noreferrer">
-                  <img
-                    src={f.url}
-                    alt="attachment"
-                    className="w-full h-24 object-cover rounded border"
-                  />
+                  <img src={f.url} alt="attachment" className="w-full h-24 object-cover rounded border" />
                 </a>
               ))}
             </div>
@@ -406,7 +394,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
 
       {/* Notes */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Add note (hidden in print) */}
+        {/* Add note */}
         <div className="border rounded-lg p-5 shadow no-print">
           <h2 className="font-semibold mb-3">Add Ongoing Note</h2>
 
@@ -480,7 +468,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
           )}
         </div>
 
-        {/* Notes list (prints) */}
+        {/* Notes list */}
         <div className="border rounded-lg p-5 shadow print-card">
           <h2 className="font-semibold mb-3">Ongoing Notes ({notes.length})</h2>
           <div className="space-y-3">
@@ -493,11 +481,7 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
                     <div className="mt-3 grid grid-cols-3 gap-2">
                       {imgs.map((f) => (
                         <a key={f.id} href={f.url} target="_blank" rel="noreferrer">
-                          <img
-                            src={f.url}
-                            alt="attachment"
-                            className="w-full h-24 object-cover rounded border"
-                          />
+                          <img src={f.url} alt="attachment" className="w-full h-24 object-cover rounded border" />
                         </a>
                       ))}
                     </div>
@@ -513,15 +497,12 @@ export default function RequestDetailPage({ params }: { params: { id: string } }
         </div>
       </div>
 
-      {/* Minimal print styles */}
+      {/* Print styles */}
       <style jsx global>{`
         @media print {
           .no-print { display: none !important; }
           body { background: #fff !important; }
-          .print-card {
-            box-shadow: none !important;
-            border-color: #ddd !important;
-          }
+          .print-card { box-shadow: none !important; border-color: #ddd !important; }
           img { page-break-inside: avoid; }
           a { color: inherit; text-decoration: none; }
         }

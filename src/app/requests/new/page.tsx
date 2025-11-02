@@ -64,7 +64,6 @@ export default function NewRequestPage() {
 
   async function uploadAttachments(workOrderId: string, companyId: string) {
     if (!files.length) return;
-
     const bucket = supabase.storage.from("work_order_uploads");
 
     const uploads = await Promise.allSettled(
@@ -142,7 +141,6 @@ export default function NewRequestPage() {
         console.warn("Attachment upload error:", e?.message || e);
       }
 
-      // Fire-and-forget email (uses request_number if your API route is set up)
       try {
         await fetch("/api/notify-new-request", {
           method: "POST",
@@ -151,7 +149,6 @@ export default function NewRequestPage() {
         });
       } catch {}
 
-      // Redirect to login/home per your spec
       window.location.replace("https://www.facilitiesportal.com/");
     } finally {
       setSubmitting(false);

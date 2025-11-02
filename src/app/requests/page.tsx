@@ -41,7 +41,6 @@ export default function RequestsPage() {
     };
   }, []);
 
-  // Realtime: keep list fresh (optional, simple approach)
   useEffect(() => {
     const channel = supabase
       .channel("work_orders_open_multi")

@@ -1,8 +1,15 @@
 // src/app/page.tsx
+"use client";
+
 import Link from "next/link";
 import TenantHeader from "@/app/_components/TenantHeader";
 
 export default function HomePage() {
+  function goToSubdomainLogin() {
+    // Always send to the current origin’s root, e.g. https://<sub>.facilitiesportal.com/
+    window.location.assign("/");
+  }
+
   return (
     <main>
       {/* Tenant-specific logo/name header */}
@@ -19,13 +26,13 @@ export default function HomePage() {
             New Request
           </Link>
 
-          {/* Login goes to the apex login page */}
-          <a
-            href="https://www.facilitiesportal.com/"
+          <button
+            type="button"
+            onClick={goToSubdomainLogin}
             className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
           >
             Login
-          </a>
+          </button>
         </div>
 
         {/* Minimal Facilitiesportal */}

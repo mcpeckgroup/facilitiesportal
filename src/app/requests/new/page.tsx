@@ -27,6 +27,7 @@ const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 export default function NewRequestPage() {
   const [companyName, setCompanyName] = useState<string>("");
   const [companyId, setCompanyId] = useState<string>("");
+  const [companyLoading, setCompanyLoading] = useState(true);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -39,12 +40,23 @@ export default function NewRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Load company context once
   useEffect(() => {
+    let cancel = false;
     (async () => {
-      const c = await getCompany();
-      setCompanyName(c.name);
-      setCompanyId(c.id);
+      try {
+        const c = await getCompany();
+        if (cancel) return;
+        setCompanyName(c.name);
+        setCompanyId(c.id);
+      } catch (e: any) {
+        console.error("getCompany failed:", e?.message || e);
+        setError("Could not resolve company from subdomain.");
+      } finally {
+        if (!cancel) setCompanyLoading(false);
+      }
     })();
+    return () => { cancel = true; };
   }, []);
 
   function isValidEmail(v: string) {
@@ -105,6 +117,17 @@ export default function NewRequestPage() {
     if (failed.length) console.warn("Some files failed to upload:", failed);
   }
 
+  async function ensureCompany() {
+    // If for some reason companyId didn’t set yet, try once more
+    if (!companyId) {
+      const c = await getCompany();
+      setCompanyName(c.name);
+      setCompanyId(c.id);
+      return c.id;
+    }
+    return companyId;
+    }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -121,27 +144,30 @@ export default function NewRequestPage() {
       setError(filesError);
       return;
     }
-    if (!companyId) {
-      setError("Company context missing.");
-      return;
-    }
 
     setSubmitting(true);
 
     try {
+      const cid = await ensureCompany();
+      if (!cid) {
+        setError("Company context missing. Please reload the page and try again.");
+        return;
+      }
+
       const payload = {
         title,
         description,
-        business: companyName, // shown immediately; DB trigger will also sync from company_id
+        business: companyName, // visual; DB trigger will also sync from company_id
         priority,
         submitter_name: name,
         submitter_email: email,
         status: "open" as const,
-        company_id: companyId,
+        company_id: cid,
       };
 
       const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
       if (error || !data) {
+        console.error("Insert error:", error);
         setError(error?.message || "Failed to create request.");
         return;
       }
@@ -158,17 +184,40 @@ export default function NewRequestPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ record: data as WorkOrder }),
         });
-      } catch {}
+      } catch (e) {
+        console.warn("Notify email failed (non-blocking).");
+      }
 
+      // redirect to login, per your requirement
       window.location.replace("https://www.facilitiesportal.com/");
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || "Unexpected error while submitting.");
     } finally {
       setSubmitting(false);
     }
   }
 
+  if (companyLoading) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <h1 className="text-2xl font-semibold mb-4">New Request</h1>
+        <div className="border rounded-xl p-5 shadow text-sm text-gray-600">
+          Loading company context…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-semibold">New Request</h1>
+
+      {error && (
+        <div className="border border-red-300 bg-red-50 text-red-700 rounded p-3">
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4 border rounded-xl p-5 shadow">
         <div>
@@ -224,9 +273,7 @@ export default function NewRequestPage() {
           )}
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button type="submit" disabled={submitting || !companyId} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
+        <button type="submit" className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
           {submitting ? "Submitting…" : "Submit Request"}
         </button>
       </form>

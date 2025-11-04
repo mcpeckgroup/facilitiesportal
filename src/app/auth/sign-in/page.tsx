@@ -29,11 +29,15 @@ export default function SignInPage() {
 
     setSending(true);
     try {
-      const origin = window.location.origin;
+      // IMPORTANT: redirect back to the SAME subdomain’s callback page
+      const origin = window.location.origin; // e.g. https://infuserve.facilitiesportal.com
+      const emailRedirectTo = `${origin}/auth/callback`;
+
       const { error } = await supabase.auth.signInWithOtp({
         email: value,
-        options: { emailRedirectTo: origin },
+        options: { emailRedirectTo },
       });
+
       if (error) setErr(error.message);
       else setMsg("Check your email for a login link.");
     } catch (e: any) {
@@ -53,7 +57,7 @@ export default function SignInPage() {
       <form onSubmit={sendMagicLink} className="space-y-4 border rounded-xl p-5 shadow bg-white">
         <div>
           <label className="block text-sm font-medium mb-1">Email</label>
-          <input
+        <input
             type="email"
             className="w-full border rounded p-2"
             placeholder="you@example.com"

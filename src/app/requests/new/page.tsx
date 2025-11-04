@@ -1,239 +1,177 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { getCompany } from "@/lib/company";
 
-type WorkOrder = {
-  id: string;
-  title: string;
-  description: string;
-  business: string;
-  priority: "emergency" | "urgent" | "non_critical" | "routine" | string;
-  submitter_name: string;
-  submitter_email: string;
-  status: "open" | "completed" | string;
-  created_at: string;
-  completed_at: string | null;
-  completion_note: string | null;
-  request_number?: number;
-  company_id?: string;
-};
-
-const MAX_FILES = 6;
-const MAX_MB = 5;
-const ALLOWED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+type Company = { id: string; slug: string; name: string };
 
 export default function NewRequestPage() {
-  const [companyId, setCompanyId] = useState<string>("");
-  const [companySlug, setCompanySlug] = useState<string>("");
-  const [companyLoading, setCompanyLoading] = useState(true);
+  const [company, setCompany] = useState<Company | null>(null);
+  const [loadingCompany, setLoadingCompany] = useState(true);
 
+  // form fields
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<WorkOrder["priority"]>("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [priority, setPriority] = useState("routine");
+  const [submitterName, setSubmitterName] = useState("");
+  const [submitterEmail, setSubmitterEmail] = useState("");
 
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
 
+  // 1) Resolve company from subdomain (api/company/by-host)
   useEffect(() => {
-    let cancel = false;
+    let cancelled = false;
     (async () => {
       try {
-        const c = await getCompany(); // expects { id, slug, name }
-        if (cancel) return;
-        setCompanyId(c.id);
-        setCompanySlug(c.slug);
+        const res = await fetch("/api/company/by-host", { cache: "no-store" });
+        if (!res.ok) throw new Error("Could not resolve company from host.");
+        const data = (await res.json()) as Company;
+        if (!cancelled) setCompany(data);
       } catch (e: any) {
-        console.error("getCompany failed:", e?.message || e);
-        setError("Could not resolve company from subdomain.");
+        if (!cancelled) setError(e?.message || "Company lookup failed.");
       } finally {
-        if (!cancel) setCompanyLoading(false);
+        if (!cancelled) setLoadingCompany(false);
       }
     })();
-    return () => { cancel = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  function isValidEmail(v: string) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((v || "").trim());
-  }
-
-  const filesError = useMemo(() => {
-    if (files.length > MAX_FILES) return `Please select up to ${MAX_FILES} images.`;
-    for (const f of files) {
-      if (!ALLOWED.includes(f.type)) return "Only JPG, PNG, or WEBP images are allowed.";
-      if (f.size > MAX_MB * 1024 * 1024) return `Each file must be ≤ ${MAX_MB} MB.`;
-    }
-    return null;
-  }, [files]);
-
-  function onChooseFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const chosen = Array.from(e.target.files || []);
-    const capped = chosen.slice(0, MAX_FILES);
-    setFiles(capped);
-    setPreviews(capped.map((f) => URL.createObjectURL(f)));
-  }
-
-  function sanitizeFilename(name: string) {
-    return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  }
-
-  async function uploadAttachments(workOrderId: string) {
-    if (!files.length) return;
-    const bucket = supabase.storage.from("work_order_uploads");
-
-    const uploads = await Promise.allSettled(
-      files.map(async (file) => {
-        const key = `requests/${workOrderId}/${Date.now()}-${sanitizeFilename(file.name)}`;
-        const { error: upErr } = await bucket.upload(key, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type,
-        });
-        if (upErr) throw new Error(upErr.message);
-
-        const { data: pub } = bucket.getPublicUrl(key);
-        const url = pub?.publicUrl || "";
-        if (!url) throw new Error("Could not get public URL");
-
-        const { error: rowErr } = await supabase.from("work_order_files").insert({
-          work_order_id: workOrderId,
-          note_id: null,
-          path: key,
-          url,
-          company_id: companyId,
-        });
-        if (rowErr) throw new Error(rowErr.message);
-        return url;
-      })
-    );
-
-    const failed = uploads.filter((u) => u.status === "rejected");
-    if (failed.length) console.warn("Some files failed to upload:", failed);
-  }
-
-  function computeHomeUrl(): string {
-    const { protocol, hostname } = window.location;
-    // If already on a company subdomain under facilitiesportal.com, go to "/"
-    if (hostname.endsWith(".facilitiesportal.com") && !hostname.startsWith("www.")) {
-      return `${protocol}//${hostname}/`;
-    }
-    // Otherwise (apex or vercel preview), use the resolved slug if available
-    if (companySlug) {
-      return `${protocol}//${companySlug}.facilitiesportal.com/`;
-    }
-    // Fallback: current origin root
-    return `${protocol}//${hostname}/`;
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (!title || !description || !priority || !name || !email) {
-      setError("Please fill in all fields.");
+    if (!company) {
+      setError("Company not resolved. Try reloading the page.");
       return;
     }
-    if (!isValidEmail(email)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-    if (filesError) {
-      setError(filesError);
-      return;
-    }
-    if (!companyId) {
-      setError("Company context missing. Please reload the page and try again.");
+
+    if (!title.trim() || !description.trim() || !submitterName.trim() || !submitterEmail.trim()) {
+      setError("Please complete all required fields.");
       return;
     }
 
     setSubmitting(true);
-
     try {
-      const payload = {
-        title,
-        description,
-        priority,
-        submitter_name: name,
-        submitter_email: email,
-        status: "open" as const,
-        company_id: companyId, // DB trigger sets `business`
-      };
+      // 2) Insert with company_id
+      const { error: insertErr } = await supabase.from("work_orders").insert([
+        {
+          title: title.trim(),
+          description: description.trim(),
+          priority, // "emergency" | "urgent" | "non_critical" | "routine"
+          submitter_name: submitterName.trim(),
+          submitter_email: submitterEmail.trim(),
+          status: "open",
+          company_id: company.id, // <-- the key to tenant scoping
+        },
+      ]);
 
-      const { data, error } = await supabase.from("work_orders").insert(payload).select("*").single();
-      if (error || !data) {
-        console.error("Insert error:", error);
-        setError(error?.message || "Failed to create request.");
+      if (insertErr) {
+        setError(insertErr.message);
+        setSubmitting(false);
         return;
       }
 
-      try {
-        await uploadAttachments(data.id);
-      } catch (e: any) {
-        console.warn("Attachment upload error:", e?.message || e);
-      }
-
+      // (optional) If you’ve wired Resend via /api/notify-new-request, notify:
       try {
         await fetch("/api/notify-new-request", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ record: data as WorkOrder }),
+          body: JSON.stringify({
+            record: {
+              title,
+              description,
+              priority,
+              submitter_name: submitterName,
+              submitter_email: submitterEmail,
+              created_at: new Date().toISOString(),
+              company_name: company.name,
+              company_slug: company.slug,
+            },
+          }),
         });
       } catch {
         // non-blocking
       }
 
-      // ✅ Redirect to the company-specific home page
-      const home = computeHomeUrl();
-      window.location.replace(home);
+      setOk(true);
+      // 3) Send back to the home of the current subdomain
+      window.location.assign("/");
     } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Unexpected error while submitting.");
-    } finally {
+      setError(e?.message || "Failed to submit request.");
       setSubmitting(false);
     }
   }
 
-  if (companyLoading) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-4">New Request</h1>
-        <div className="border rounded-xl p-5 shadow text-sm text-gray-600">
-          Loading company context…
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
-      <h1 className="text-2xl font-semibold">New Request</h1>
+    <div className="p-6 max-w-2xl mx-auto">
+      <div className="mb-6 flex items-center gap-3">
+        <a href="/requests" className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
+          Back to Open Requests
+        </a>
+        <a href="/requests/completed" className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
+          Completed Requests
+        </a>
+        <div className="flex-1" />
+        <a href="/auth/sign-out" className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
+          Sign out
+        </a>
+      </div>
 
+      <h1 className="text-2xl font-semibold mb-4">New Request</h1>
+
+      {loadingCompany && <p className="text-gray-600 mb-3">Resolving company…</p>}
+      {company && (
+        <p className="text-sm text-gray-600 mb-4">
+          Company: <strong>{company.name}</strong>
+        </p>
+      )}
       {error && (
-        <div className="border border-red-300 bg-red-50 text-red-700 rounded p-3">
+        <div className="mb-4 rounded border border-red-300 bg-red-50 text-red-700 p-3">
           {error}
         </div>
       )}
+      {ok && (
+        <div className="mb-4 rounded border border-green-300 bg-green-50 text-green-800 p-3">
+          Request submitted.
+        </div>
+      )}
 
-      <form onSubmit={handleSubmit} className="space-y-4 border rounded-xl p-5 shadow">
+      <form onSubmit={handleSubmit} className="grid gap-4 border rounded-lg p-5 bg-white shadow">
         <div>
-          <label className="block text-sm font-medium mb-1">Title</label>
-          <input className="w-full border rounded p-2" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short title" required />
+          <label className="block text-sm font-medium mb-1">Title *</label>
+          <input
+            type="text"
+            className="w-full border rounded p-2"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={200}
+            required
+          />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Description</label>
-          <textarea className="w-full border rounded p-2 min-h-[120px]" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the issue/request" required />
+          <label className="block text-sm font-medium mb-1">Description *</label>
+          <textarea
+            className="w-full border rounded p-2 h-28"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+          />
         </div>
 
+        {/* Keep same layout: no Business dropdown */}
         <div>
-          <label className="block text-sm font-medium mb-1">Priority</label>
-          <select className="w-full border rounded p-2" value={priority} onChange={(e) => setPriority(e.target.value)} required>
-            <option value="">Select priority</option>
+          <label className="block text-sm font-medium mb-1">Priority *</label>
+          <select
+            className="w-full border rounded p-2"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            required
+          >
             <option value="emergency">Emergency</option>
             <option value="urgent">Urgent</option>
             <option value="non_critical">Non-Critical</option>
@@ -241,34 +179,45 @@ export default function NewRequestPage() {
           </select>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Your Name</label>
-            <input className="w-full border rounded p-2" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" required />
+            <label className="block text-sm font-medium mb-1">Your Name *</label>
+            <input
+              type="text"
+              className="w-full border rounded p-2"
+              value={submitterName}
+              onChange={(e) => setSubmitterName(e.target.value)}
+              required
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Your Email</label>
-            <input type="email" className="w-full border rounded p-2" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" required />
+            <label className="block text-sm font-medium mb-1">Your Email *</label>
+            <input
+              type="email"
+              className="w-full border rounded p-2"
+              value={submitterEmail}
+              onChange={(e) => setSubmitterEmail(e.target.value)}
+              required
+            />
           </div>
         </div>
 
-        {/* Images */}
-        <div>
-          <label className="block text-sm font-medium mb-1">Attach Photos</label>
-          <input type="file" accept="image/*" multiple onChange={onChooseFiles} className="block" />
-          <p className="text-xs text-gray-500 mt-1">Up to {MAX_FILES} images. JPG/PNG/WEBP. Max {MAX_MB} MB each.</p>
-          {previews.length > 0 && (
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {previews.map((src, i) => (
-                <img key={i} src={src} alt={`preview ${i + 1}`} className="w-full h-24 object-cover rounded border" />
-              ))}
-            </div>
-          )}
-        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={submitting || loadingCompany || !company}
+            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
+          >
+            {submitting ? "Submitting…" : "Submit Request"}
+          </button>
 
-        <button type="submit" className="px-4 py-2 rounded bg-blue-600 text-white">
-          {submitting ? "Submitting…" : "Submit Request"}
-        </button>
+          <a
+            href="/"
+            className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition"
+          >
+            Cancel
+          </a>
+        </div>
       </form>
     </div>
   );

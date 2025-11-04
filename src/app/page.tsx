@@ -6,8 +6,12 @@ import TenantHeader from "@/app/_components/TenantHeader";
 
 export default function HomePage() {
   function goToSubdomainLogin() {
-    // Always send to the current origin’s root, e.g. https://<sub>.facilitiesportal.com/
-    window.location.assign("/");
+    const { origin, pathname, search } = window.location;
+    // Build a URL that always causes a navigation, even if you're already on "/"
+    const hasQuery = search && search.length > 1;
+    const sep = hasQuery ? "&" : "?";
+    const loginUrl = `${origin}/${pathname === "/" ? "" : ""}${hasQuery ? search : ""}${sep}login=1&ts=${Date.now()}`;
+    window.location.assign(loginUrl);
   }
 
   return (
@@ -21,7 +25,7 @@ export default function HomePage() {
         <div className="flex flex-wrap gap-3">
           <Link
             href="/requests/new"
-            className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white shadow hover:bg-blue-700 transition"
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white shadow hover:bg-blue-700 transition pointer-events-auto"
           >
             New Request
           </Link>
@@ -29,13 +33,15 @@ export default function HomePage() {
           <button
             type="button"
             onClick={goToSubdomainLogin}
-            className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition pointer-events-auto"
           >
             Login
           </button>
         </div>
 
-        {/* Minimal welcome */}
+        {/* Optional: read ?login=1 here to show a banner/modal */}
+        {/* You can add a small message if the URL has login=1 */}
+
         <section className="mt-2">
           <h1 className="text-2xl font-semibold mb-2">Welcome</h1>
           <p className="text-gray-600">

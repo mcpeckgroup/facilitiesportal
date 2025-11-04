@@ -1,0 +1,69 @@
+"use client";
+
+import { useState } from "react";
+import { supabase } from "@/lib/supabase/client";
+import TenantHeader from "@/app/_components/TenantHeader";
+
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setMsg(null);
+    setLoading(true);
+    try {
+      const origin = window.location.origin; // current subdomain
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${origin}/auth/reset`,
+      });
+      if (error) setErr(error.message);
+      else setMsg("Check your email for a password reset link.");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to send reset email.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main>
+      <TenantHeader />
+      <div className="p-6 max-w-md mx-auto">
+        <h1 className="text-2xl font-semibold mb-4">Reset your password</h1>
+
+        {msg && <div className="mb-3 rounded border border-green-300 bg-green-50 text-green-800 p-3">{msg}</div>}
+        {err && <div className="mb-3 rounded border border-red-300 bg-red-50 text-red-700 p-3">{err}</div>}
+
+        <form onSubmit={handleSend} className="space-y-4 border rounded-xl p-5 shadow bg-white">
+          <div>
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <input
+              type="email"
+              className="w-full border rounded p-2"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
+          >
+            {loading ? "Sending…" : "Send reset link"}
+          </button>
+        </form>
+
+        <div className="mt-4">
+          <a className="text-blue-600 hover:underline" href="/auth/sign-in">Back to Sign In</a>
+        </div>
+      </div>
+    </main>
+  );
+}

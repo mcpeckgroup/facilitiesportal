@@ -25,6 +25,7 @@ type WorkOrder = {
 type Note = {
   id: string;
   work_order_id: string;
+  company_id: string;
   author_name: string | null;
   author_email: string | null;
   body: string;
@@ -114,7 +115,6 @@ export default function RequestDetailPage() {
 
     loadWo();
 
-    // Realtime work order updates (status/notes count etc.)
     const ch = supabase
       .channel(`wo-${workOrderId}`)
       .on(
@@ -139,7 +139,7 @@ export default function RequestDetailPage() {
       setLoadingNotes(true);
       const { data, error } = await supabase
         .from("work_order_notes")
-        .select("id, work_order_id, author_name, author_email, body, created_at")
+        .select("id, work_order_id, company_id, author_name, author_email, body, created_at")
         .eq("work_order_id", workOrderId)
         .order("created_at", { ascending: true });
 
@@ -241,10 +241,11 @@ export default function RequestDetailPage() {
 
     setAddingNote(true);
     try {
-      // 1) Insert the note
+      // 🔧 FIX: include company_id so NOT NULL constraint is satisfied
       const { error: noteErr } = await supabase.from("work_order_notes").insert([
         {
           work_order_id: wo.id,
+          company_id: wo.company_id,            // <— critical line
           author_name: noteName.trim(),
           author_email: noteEmail.trim(),
           body: noteBody.trim(),
@@ -252,7 +253,7 @@ export default function RequestDetailPage() {
       ]);
       if (noteErr) throw noteErr;
 
-      // 2) Optional: upload any files selected with the note
+      // Optional: upload images attached to the note
       if (noteFiles && noteFiles.length) {
         const bucket = supabase.storage.from("work-order-files");
         for (const f of Array.from(noteFiles)) {
@@ -269,10 +270,8 @@ export default function RequestDetailPage() {
         }
       }
 
-      // Clear form
       setNoteBody("");
       setNoteFiles(null);
-      // Do not clear name/email so the tech can add multiple notes quickly
     } catch (err: any) {
       setAddNoteErr(err?.message || "Failed to add note.");
     } finally {
@@ -310,7 +309,7 @@ export default function RequestDetailPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      {/* Header / actions (same layout) */}
+      {/* Header / actions */}
       <div className="mb-6 flex items-center gap-3">
         <a href={backLink} className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
           {wo.status === "completed" ? "Back to Completed" : "Back to Open"}
@@ -345,7 +344,7 @@ export default function RequestDetailPage() {
         {wo.completed_at ? <> &nbsp;|&nbsp; Completed at: {new Date(wo.completed_at).toLocaleString()}</> : null}
       </p>
 
-      {/* Description card (unchanged layout style) */}
+      {/* Description */}
       <div className="border rounded-lg p-4 bg-white shadow mb-6">
         <h2 className="font-semibold mb-2">Description</h2>
         <p className="whitespace-pre-wrap">{wo.description}</p>
@@ -356,7 +355,7 @@ export default function RequestDetailPage() {
         ) : null}
       </div>
 
-      {/* Photos card */}
+      {/* Photos */}
       <div className="border rounded-lg p-4 bg-white shadow mb-6">
         <h2 className="font-semibold mb-3">Photos</h2>
         {loadingFiles ? (
@@ -382,11 +381,10 @@ export default function RequestDetailPage() {
         )}
       </div>
 
-      {/* Ongoing Notes card (restored) */}
+      {/* Ongoing Notes */}
       <div className="border rounded-lg p-4 bg-white shadow">
         <h2 className="font-semibold mb-3">Ongoing Notes</h2>
 
-        {/* Existing notes */}
         {loadingNotes ? (
           <p className="text-gray-600 mb-3">Loading notes…</p>
         ) : notes.length === 0 ? (
@@ -404,12 +402,10 @@ export default function RequestDetailPage() {
           </div>
         )}
 
-        {/* Add note form (same fields you used before, now required) */}
         <form onSubmit={handleAddNote} className="grid gap-3">
           {addNoteErr && (
             <div className="rounded border border-red-300 bg-red-50 text-red-700 p-2">{addNoteErr}</div>
           )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Your Name *</label>
@@ -443,7 +439,6 @@ export default function RequestDetailPage() {
             />
           </div>
 
-          {/* Optional photo attachments with the note */}
           <div>
             <label className="block text-sm font-medium mb-1">Attach Photos (optional)</label>
             <input

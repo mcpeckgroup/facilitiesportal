@@ -15,12 +15,12 @@ export default function NewRequestPage() {
   const [priority, setPriority] = useState("routine");
   const [submitterName, setSubmitterName] = useState("");
   const [submitterEmail, setSubmitterEmail] = useState("");
+  const [files, setFiles] = useState<FileList | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState(false);
 
-  // 1) Resolve company from subdomain (api/company/by-host)
+  // Resolve company for this subdomain
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -45,10 +45,9 @@ export default function NewRequestPage() {
     setError(null);
 
     if (!company) {
-      setError("Company not resolved. Try reloading the page.");
+      setError("Company not resolved. Reload and try again.");
       return;
     }
-
     if (!title.trim() || !description.trim() || !submitterName.trim() || !submitterEmail.trim()) {
       setError("Please complete all required fields.");
       return;
@@ -56,26 +55,59 @@ export default function NewRequestPage() {
 
     setSubmitting(true);
     try {
-      // 2) Insert with company_id
-      const { error: insertErr } = await supabase.from("work_orders").insert([
-        {
-          title: title.trim(),
-          description: description.trim(),
-          priority, // "emergency" | "urgent" | "non_critical" | "routine"
-          submitter_name: submitterName.trim(),
-          submitter_email: submitterEmail.trim(),
-          status: "open",
-          company_id: company.id, // <-- the key to tenant scoping
-        },
-      ]);
+      // 1) Insert the work order with company_id
+      const insertPayload = [{
+        title: title.trim(),
+        description: description.trim(),
+        priority, // emergency | urgent | non_critical | routine
+        submitter_name: submitterName.trim(),
+        submitter_email: submitterEmail.trim(),
+        status: "open",
+        company_id: company.id,          // <<< CRITICAL for tenant scoping
+      }];
 
-      if (insertErr) {
-        setError(insertErr.message);
+      const { data: inserted, error: insertErr } = await supabase
+        .from("work_orders")
+        .insert(insertPayload)
+        .select("*")
+        .single();
+
+      if (insertErr || !inserted) {
+        setError(insertErr?.message || "Insert failed.");
         setSubmitting(false);
         return;
       }
 
-      // (optional) If you’ve wired Resend via /api/notify-new-request, notify:
+      // 2) Upload files (optional)
+      if (files && files.length) {
+        const bucket = supabase.storage.from("work-order-files");
+
+        for (const f of Array.from(files)) {
+          const safeName = f.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+          const path = `${company.slug}/${inserted.id}/${Date.now()}_${safeName}`;
+
+          const up = await bucket.upload(path, f, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+          if (up.error) {
+            // non-blocking; record but continue
+            console.warn("Upload failed:", up.error.message);
+            continue;
+          }
+
+          // 3) Record the file in work_order_files
+          await supabase.from("work_order_files").insert([
+            {
+              work_order_id: inserted.id,
+              path,
+              mime_type: f.type || null,
+            },
+          ]);
+        }
+      }
+
+      // 4) Optional: notify via Resend HTTP route (non-blocking)
       try {
         await fetch("/api/notify-new-request", {
           method: "POST",
@@ -93,12 +125,9 @@ export default function NewRequestPage() {
             },
           }),
         });
-      } catch {
-        // non-blocking
-      }
+      } catch {}
 
-      setOk(true);
-      // 3) Send back to the home of the current subdomain
+      // 5) Redirect to this tenant's home
       window.location.assign("/");
     } catch (e: any) {
       setError(e?.message || "Failed to submit request.");
@@ -134,11 +163,6 @@ export default function NewRequestPage() {
           {error}
         </div>
       )}
-      {ok && (
-        <div className="mb-4 rounded border border-green-300 bg-green-50 text-green-800 p-3">
-          Request submitted.
-        </div>
-      )}
 
       <form onSubmit={handleSubmit} className="grid gap-4 border rounded-lg p-5 bg-white shadow">
         <div>
@@ -163,7 +187,6 @@ export default function NewRequestPage() {
           />
         </div>
 
-        {/* Keep same layout: no Business dropdown */}
         <div>
           <label className="block text-sm font-medium mb-1">Priority *</label>
           <select
@@ -200,6 +223,19 @@ export default function NewRequestPage() {
               required
             />
           </div>
+        </div>
+
+        {/* Photo upload (optional, multiple images) */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Photos (optional)</label>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(e) => setFiles(e.target.files)}
+            className="w-full border rounded p-2 bg-white"
+          />
+          <p className="text-xs text-gray-500 mt-1">You can select multiple images.</p>
         </div>
 
         <div className="flex items-center gap-3">

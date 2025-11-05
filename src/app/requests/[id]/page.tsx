@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 type Company = { id: string; slug: string; name: string };
@@ -42,6 +42,7 @@ type WorkOrderFile = {
 };
 
 export default function RequestDetailPage() {
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const workOrderId = params.id;
 
@@ -67,7 +68,7 @@ export default function RequestDetailPage() {
   const [addingNote, setAddingNote] = useState(false);
   const [addNoteErr, setAddNoteErr] = useState<string | null>(null);
 
-  // Resolve company from subdomain
+  // Resolve company
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -137,15 +138,13 @@ export default function RequestDetailPage() {
 
     async function loadNotes() {
       setLoadingNotes(true);
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("work_order_notes")
         .select("id, work_order_id, company_id, author_name, author_email, body, created_at")
         .eq("work_order_id", workOrderId)
         .order("created_at", { ascending: true });
 
-      if (!error && data && !cancelled) {
-        setNotes(data as Note[]);
-      }
+      if (!cancelled && data) setNotes(data as Note[]);
       if (!cancelled) setLoadingNotes(false);
     }
 
@@ -222,11 +221,15 @@ export default function RequestDetailPage() {
       .from("work_orders")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", wo.id);
+
+    // redirect straight to Completed list
+    router.push("/requests/completed");
   }
 
   async function handleReopen() {
     if (!wo) return;
     await supabase.from("work_orders").update({ status: "open", completed_at: null }).eq("id", wo.id);
+    router.push("/requests"); // go back to Open list
   }
 
   async function handleAddNote(e: React.FormEvent) {
@@ -241,11 +244,11 @@ export default function RequestDetailPage() {
 
     setAddingNote(true);
     try {
-      // 🔧 FIX: include company_id so NOT NULL constraint is satisfied
+      // include company_id to satisfy NOT NULL
       const { error: noteErr } = await supabase.from("work_order_notes").insert([
         {
           work_order_id: wo.id,
-          company_id: wo.company_id,            // <— critical line
+          company_id: wo.company_id,
           author_name: noteName.trim(),
           author_email: noteEmail.trim(),
           body: noteBody.trim(),
@@ -253,7 +256,7 @@ export default function RequestDetailPage() {
       ]);
       if (noteErr) throw noteErr;
 
-      // Optional: upload images attached to the note
+      // upload any images with the note
       if (noteFiles && noteFiles.length) {
         const bucket = supabase.storage.from("work-order-files");
         for (const f of Array.from(noteFiles)) {
@@ -282,11 +285,7 @@ export default function RequestDetailPage() {
   if (loadingCompany || loadingWo) {
     return (
       <div className="p-6">
-        <div className="mb-6 flex items-center gap-3">
-          <a href={backLink} className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">Back</a>
-          <div className="flex-1" />
-          <a href="/auth/sign-out" className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">Sign out</a>
-        </div>
+        <HeaderRow backLink={backLink} />
         <p className="text-gray-600">Loading…</p>
       </div>
     );
@@ -295,11 +294,7 @@ export default function RequestDetailPage() {
   if (companyErr || woErr || !wo) {
     return (
       <div className="p-6">
-        <div className="mb-6 flex items-center gap-3">
-          <a href="/requests" className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">Back to Requests</a>
-          <div className="flex-1" />
-          <a href="/auth/sign-out" className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">Sign out</a>
-        </div>
+        <HeaderRow backLink="/requests" />
         <div className="rounded border border-red-300 bg-red-50 text-red-700 p-3">
           {companyErr || woErr || "Not found for this company."}
         </div>
@@ -309,11 +304,17 @@ export default function RequestDetailPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      {/* Header / actions */}
+      {/* Header / actions (includes Print) */}
       <div className="mb-6 flex items-center gap-3">
         <a href={backLink} className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
           {wo.status === "completed" ? "Back to Completed" : "Back to Open"}
         </a>
+        <button
+          onClick={() => window.print()}
+          className="px-3 py-2 rounded bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
+        >
+          Print
+        </button>
         <div className="flex-1" />
         {wo.status === "open" ? (
           <button onClick={handleComplete} className="px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition">
@@ -332,9 +333,7 @@ export default function RequestDetailPage() {
       {/* Title */}
       <h1 className="text-2xl font-semibold mb-2">
         {wo.title}{" "}
-        {typeof wo.request_number === "number" ? (
-          <span className="text-gray-500">#{wo.request_number}</span>
-        ) : null}
+        {typeof wo.request_number === "number" ? <span className="text-gray-500">#{wo.request_number}</span> : null}
       </h1>
 
       {/* Meta */}
@@ -403,9 +402,8 @@ export default function RequestDetailPage() {
         )}
 
         <form onSubmit={handleAddNote} className="grid gap-3">
-          {addNoteErr && (
-            <div className="rounded border border-red-300 bg-red-50 text-red-700 p-2">{addNoteErr}</div>
-          )}
+          {addNoteErr && <div className="rounded border border-red-300 bg-red-50 text-red-700 p-2">{addNoteErr}</div>}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Your Name *</label>
@@ -465,6 +463,26 @@ export default function RequestDetailPage() {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function HeaderRow({ backLink }: { backLink: string }) {
+  return (
+    <div className="mb-6 flex items-center gap-3">
+      <a href={backLink} className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
+        Back
+      </a>
+      <button
+        onClick={() => window.print()}
+        className="px-3 py-2 rounded bg-gray-200 text-gray-900 shadow hover:bg-gray-300 transition"
+      >
+        Print
+      </button>
+      <div className="flex-1" />
+      <a href="/auth/sign-out" className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300 transition">
+        Sign out
+      </a>
     </div>
   );
 }

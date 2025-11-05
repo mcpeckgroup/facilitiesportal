@@ -47,6 +47,7 @@ export default function CompletedRequestsPage() {
   // Load + realtime once company known
   useEffect(() => {
     if (!company) return;
+    const companyId = company.id; // <-- capture after guard
     setLoading(true);
 
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -55,7 +56,7 @@ export default function CompletedRequestsPage() {
       const { data, error } = await supabase
         .from("work_orders")
         .select("*")
-        .eq("company_id", company.id)
+        .eq("company_id", companyId)
         .eq("status", "completed")
         .order("completed_at", { ascending: false });
 
@@ -66,15 +67,10 @@ export default function CompletedRequestsPage() {
     load();
 
     channel = supabase
-      .channel(`completed-requests-${company.id}`)
+      .channel(`completed-requests-${companyId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "work_orders",
-          filter: `company_id=eq.${company.id}`,
-        },
+        { event: "*", schema: "public", table: "work_orders", filter: `company_id=eq.${companyId}` },
         () => load()
       )
       .subscribe();
@@ -82,7 +78,7 @@ export default function CompletedRequestsPage() {
     return () => {
       if (channel) supabase.removeChannel(channel);
     };
-  }, [company]);
+  }, [company?.id]); // key on id
 
   const filtered = requests.filter((r) => (filterPriority ? r.priority === filterPriority : true));
 
